@@ -1,0 +1,28 @@
+{
+  "name": "ai-maestro-plugins",
+  "owner": {
+    "name": "23blocks",
+    "email": "hello@23blocks.com"
+  },
+  "metadata": {
+    "description": "Official AI Maestro plugins for Claude Code",
+    "version": "1.0.0",
+    "homepage": "https://github.com/23blocks-OS/ai-maestro",
+    "repository": "https://github.com/23blocks-OS/ai-maestro-plugins"
+  },
+  "plugins": [
+    {
+      "name": "ai-maestro",
+      "source": "./plugins/ai-maestro",
+      "description": "AI agent orchestration — memory search, code graph, AMP messaging, docs search, task planning",
+      "version": "1.0.0",
+      "author": {
+        "name": "23blocks"
+      },
+      "homepage": "https://github.com/23blocks-OS/ai-maestro",
+      "license": "MIT",
+      "keywords": ["ai", "agents", "orchestration", "memory", "graph", "messaging", "amp"],
+      "category": "productivity"
+    }
+  ]
+}

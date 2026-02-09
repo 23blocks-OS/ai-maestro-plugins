@@ -1,0 +1,10 @@
+# macOS
+.DS_Store
+
+# Editor
+*.swp
+*.swo
+*~
+
+# Node
+node_modules/
