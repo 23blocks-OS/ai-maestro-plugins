@@ -47,7 +47,9 @@ show_help() {
     echo "  --type, -t TYPE           request|response|notification|task|status (default: notification)"
     echo "  --reply-to, -r ID         Message ID this is replying to"
     echo "  --context, -c JSON        Additional context as JSON"
-    echo "  --attach, -a FILE         Attach a file (repeatable, max ${AMP_MAX_ATTACHMENTS})"
+    echo "  --attach, -a FILE         Attach a file (repeatable, max ${AMP_MAX_ATTACHMENTS} files,"
+    echo "                              max $(format_file_size "$AMP_MAX_ATTACHMENT_SIZE")/file,"
+    echo "                              max $(format_file_size "$AMP_MAX_TOTAL_ATTACHMENT_SIZE") total)"
     echo "  --help, -h                Show this help"
     echo ""
     echo "Address formats:"
@@ -258,7 +260,25 @@ if [ ${#ATTACH_FILES[@]} -gt 0 ]; then
             cp "$attach_file" "${local_att_dir}/${local_filename}"
             chmod 600 "${local_att_dir}/${local_filename}"
 
-            local local_uploaded_at
+            # Verify digest after copy (S-P2-01: detect silent corruption)
+            local_copy_digest=$(compute_file_digest "${local_att_dir}/${local_filename}")
+            if [ "$local_copy_digest" != "$local_digest" ]; then
+                echo "Error: Digest mismatch after copy for $(basename "$attach_file")" >&2
+                rm -f "${local_att_dir}/${local_filename}"
+                exit 1
+            fi
+
+            # Determine scan status: perform basic MIME verification locally
+            # Full scanning (AV, injection) requires provider infrastructure
+            # Use spec-defined values: basic_clean (MIME checks passed), unscanned (no checks)
+            local_scan_status="unscanned"
+            if is_mime_blocked "$local_mime"; then
+                local_scan_status="rejected"
+            else
+                # MIME check passed - mark as basic_clean (required checks done, no AV)
+                local_scan_status="basic_clean"
+            fi
+
             local_uploaded_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
             att_meta=$(jq -n \
@@ -267,9 +287,9 @@ if [ ${#ATTACH_FILES[@]} -gt 0 ]; then
                 --arg content_type "$local_mime" \
                 --argjson size "$local_size" \
                 --arg digest "$local_digest" \
-                --arg scan_status "clean" \
+                --arg scan_status "$local_scan_status" \
                 --arg uploaded_at "$local_uploaded_at" \
-                --arg expires_at "$(date -u -v+7d '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '+7 days' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo "")" \
+                --arg expires_at "$(compute_expiry_date 7)" \
                 '{id: $id, filename: $filename, content_type: $content_type, size: $size, digest: $digest, url: null, scan_status: $scan_status, uploaded_at: $uploaded_at, expires_at: $expires_at}')
             ATTACHMENTS_JSON=$(echo "$ATTACHMENTS_JSON" | jq --argjson att "$att_meta" '. + [$att]')
         done
@@ -291,12 +311,11 @@ fi
 # - Includes in_reply_to to prevent thread hijacking
 # - payload_hash covers entire payload content
 #
-# Use jq -c for compact JSON (same as JSON.stringify in Node.js)
+# Use jq -cS for compact JSON with sorted keys (required for cross-language interop)
 # Note: jq adds a trailing newline, so we remove it with tr before hashing
-PAYLOAD_HASH=$(echo "$MESSAGE_JSON" | jq -c '.payload' | tr -d '\n' | $OPENSSL_BIN dgst -sha256 -binary | base64 | tr -d '\n')
-FROM_ADDR=$(echo "$MESSAGE_JSON" | jq -r '.envelope.from')
-TO_ADDR=$(echo "$MESSAGE_JSON" | jq -r '.envelope.to')
-SUBJ=$(echo "$MESSAGE_JSON" | jq -r '.envelope.subject')
+PAYLOAD_HASH=$(echo "$MESSAGE_JSON" | jq -cS '.payload' | tr -d '\n' | $OPENSSL_BIN dgst -sha256 -binary | base64 | tr -d '\n')
+# Extract envelope fields in a single jq call for efficiency
+read -r FROM_ADDR TO_ADDR SUBJ < <(echo "$MESSAGE_JSON" | jq -r '[.envelope.from, .envelope.to, .envelope.subject] | @tsv')
 # PRIORITY and REPLY_TO are already set from arguments (empty string if not provided)
 SIGN_DATA="${FROM_ADDR}|${TO_ADDR}|${SUBJ}|${PRIORITY}|${REPLY_TO}|${PAYLOAD_HASH}"
 SIGNATURE=$(sign_message "$SIGN_DATA")
@@ -326,6 +345,7 @@ send_via_api() {
         --arg type "$TYPE" \
         --arg message "$MESSAGE" \
         --arg in_reply_to "$REPLY_TO" \
+        --arg thread_id "$THREAD_ID" \
         --argjson context "$CONTEXT" \
         --argjson attachments "$ATTACHMENTS_JSON" \
         --arg signature "$SIGNATURE" \
@@ -339,6 +359,7 @@ send_via_api() {
                 context: $context
             } + (if ($attachments | length) > 0 then {attachments: $attachments} else {} end)),
             in_reply_to: (if $in_reply_to == "" then null else $in_reply_to end),
+            thread_id: (if $thread_id == "" then null else $thread_id end),
             signature: $signature
         }')
 
@@ -558,10 +579,16 @@ if [ "$ROUTE" = "local" ]; then
                 SENDER_DIR=$(sanitize_address_for_path "$FROM_ADDR")
                 mkdir -p "${RECIPIENT_INBOX}/${SENDER_DIR}"
 
+                # Strip local_path from attachments before delivery
                 DELIVERY_MSG=$(echo "$MESSAGE_JSON" | jq \
                     --arg received "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
                     '.local = (.local // {}) + {received_at: $received, status: "unread"} |
                      .payload.attachments = [(.payload.attachments // [])[] | del(.local_path)]')
+
+                # Apply content security (injection detection + wrapping) before writing
+                if type apply_content_security &>/dev/null; then
+                    DELIVERY_MSG=$(apply_content_security "$DELIVERY_MSG" "${AMP_TENANT:-default}" "true")
+                fi
 
                 echo "$DELIVERY_MSG" > "${RECIPIENT_INBOX}/${SENDER_DIR}/${MSG_ID}.json"
 
@@ -573,7 +600,6 @@ if [ "$ROUTE" = "local" ]; then
                 echo "  Type:     ${TYPE}"
                 echo "  ID:       ${MSG_ID}"
 
-                local fs_att_count
                 fs_att_count=$(echo "$ATTACHMENTS_JSON" | jq 'length' 2>/dev/null || echo "0")
                 if [ "$fs_att_count" -gt 0 ]; then
                     echo "  Attach:   ${fs_att_count} file(s)"
@@ -628,7 +654,7 @@ else
     EXT_SUBJ=$(echo "$MESSAGE_JSON" | jq -r '.envelope.subject')
     EXT_PRIORITY=$(echo "$MESSAGE_JSON" | jq -r '.envelope.priority // "normal"')
     EXT_REPLY_TO=$(echo "$MESSAGE_JSON" | jq -r '.envelope.in_reply_to // ""')
-    EXT_PAYLOAD_HASH=$(echo "$MESSAGE_JSON" | jq -c '.payload' | tr -d '\n' | $OPENSSL_BIN dgst -sha256 -binary | base64 | tr -d '\n')
+    EXT_PAYLOAD_HASH=$(echo "$MESSAGE_JSON" | jq -cS '.payload' | tr -d '\n' | $OPENSSL_BIN dgst -sha256 -binary | base64 | tr -d '\n')
     SIGN_DATA="${EXT_FROM_ADDR}|${EXT_TO_ADDR}|${EXT_SUBJ}|${EXT_PRIORITY}|${EXT_REPLY_TO}|${EXT_PAYLOAD_HASH}"
     SIGNATURE=$(sign_message "$SIGN_DATA")
 
@@ -666,7 +692,6 @@ else
         echo "  ID:       ${MSG_ID}"
         echo "  Status:   ${DELIVERY_STATUS}"
 
-        local ext_att_count
         ext_att_count=$(echo "$ATTACHMENTS_JSON" | jq 'length' 2>/dev/null || echo "0")
         if [ "$ext_att_count" -gt 0 ]; then
             echo "  Attach:   ${ext_att_count} file(s)"

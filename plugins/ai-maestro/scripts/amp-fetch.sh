@@ -203,7 +203,7 @@ for provider in "${PROVIDERS[@]}"; do
                     v_subj=$(echo "$msg" | jq -r '.envelope.subject // empty')
                     v_pri=$(echo "$msg" | jq -r '.envelope.priority // "normal"')
                     v_reply=$(echo "$msg" | jq -r '.envelope.in_reply_to // ""')
-                    v_phash=$(echo "$msg" | jq -c '.payload' | tr -d '\n' | $OPENSSL_BIN dgst -sha256 -binary 2>/dev/null | base64 | tr -d '\n')
+                    v_phash=$(echo "$msg" | jq -cS '.payload' | tr -d '\n' | $OPENSSL_BIN dgst -sha256 -binary 2>/dev/null | base64 | tr -d '\n')
                     v_sdata="${sender_addr}|${v_to}|${v_subj}|${v_pri}|${v_reply}|${v_phash}"
 
                     if verify_signature "$v_sdata" "$signature" "$sender_pubkey"; then
@@ -254,7 +254,7 @@ for provider in "${PROVIDERS[@]}"; do
             # Check for suspicious attachments
             fetch_att_count=$(echo "$msg" | jq '.payload.attachments // [] | length' 2>/dev/null || echo "0")
             if [ "$fetch_att_count" -gt 0 ]; then
-                echo "$msg" | jq -r '.payload.attachments[]? | @base64' 2>/dev/null | while read -r fetch_att_b64; do
+                while read -r fetch_att_b64; do
                     fetch_att=$(echo "$fetch_att_b64" | base64 -d)
                     fetch_scan=$(echo "$fetch_att" | jq -r '.scan_status // "unknown"')
                     fetch_att_name=$(echo "$fetch_att" | jq -r '.filename // "unknown"')
@@ -265,7 +265,7 @@ for provider in "${PROVIDERS[@]}"; do
                     elif [ "$fetch_scan" = "pending" ] || [ "$fetch_scan" = "unknown" ]; then
                         echo "    ⚠️  Attachment '${fetch_att_name}' scan status: ${fetch_scan}"
                     fi
-                done
+                done < <(echo "$msg" | jq -r '.payload.attachments[]? | @base64' 2>/dev/null)
             fi
 
             TOTAL_NEW=$((TOTAL_NEW + 1))
@@ -275,10 +275,12 @@ for provider in "${PROVIDERS[@]}"; do
                 # AI Maestro uses DELETE /messages/pending?id=X
                 # External providers use POST /v1/inbox/<id>/ack
                 if [ "$provider" = "aimaestro.local" ] || [ "$provider" = "${AMP_PROVIDER_DOMAIN}" ]; then
-                    curl -s --connect-timeout 3 -X DELETE "${API_URL}/messages/pending?id=${msg_id}" \
+                    curl -s --connect-timeout 3 -G -X DELETE "${API_URL}/messages/pending" \
+                        --data-urlencode "id=${msg_id}" \
                         -H "Authorization: Bearer ${API_KEY}" \
                         >/dev/null 2>&1 || true
                 else
+                    # msg_id is validated to [a-zA-Z0-9_-] so safe in path segment
                     curl -s --connect-timeout 3 -X POST "${API_URL}/v1/inbox/${msg_id}/ack" \
                         -H "Authorization: Bearer ${API_KEY}" \
                         >/dev/null 2>&1 || true

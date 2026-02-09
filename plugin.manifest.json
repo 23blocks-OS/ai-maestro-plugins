@@ -1,0 +1,37 @@
+{
+  "name": "ai-maestro",
+  "version": "1.0.0",
+  "description": "AI agent orchestration — memory search, code graph, AMP messaging, docs search, task planning",
+  "output": "./plugins/ai-maestro",
+  "plugin": {
+    "name": "ai-maestro",
+    "version": "1.0.0",
+    "author": { "name": "23blocks" },
+    "homepage": "https://github.com/23blocks-OS/ai-maestro",
+    "license": "MIT"
+  },
+  "sources": [
+    {
+      "name": "core",
+      "description": "AI Maestro core skills, scripts, and hooks",
+      "type": "local",
+      "path": "./src",
+      "map": {
+        "skills/*": "skills/",
+        "scripts/*": "scripts/",
+        "hooks/*": "hooks/"
+      }
+    },
+    {
+      "name": "amp-messaging",
+      "description": "Agent Messaging Protocol (AMP) — email for AI agents",
+      "type": "git",
+      "repo": "https://github.com/agentmessaging/claude-plugin.git",
+      "ref": "main",
+      "map": {
+        "skills/messaging": "skills/agent-messaging",
+        "scripts/*.sh": "scripts/"
+      }
+    }
+  ]
+}

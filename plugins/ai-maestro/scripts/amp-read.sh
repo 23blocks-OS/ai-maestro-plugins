@@ -22,6 +22,7 @@ MESSAGE_ID=""
 MARK_READ=true
 JSON_OUTPUT=false
 BOX="inbox"
+AUTO_DOWNLOAD=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -37,6 +38,10 @@ while [[ $# -gt 0 ]]; do
             BOX="sent"
             shift
             ;;
+        --download)
+            AUTO_DOWNLOAD=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: amp-read <message-id> [options]"
             echo ""
@@ -49,6 +54,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-mark-read, -n   Don't mark the message as read"
             echo "  --json, -j           Output raw JSON"
             echo "  --sent, -s           Read from sent folder instead of inbox"
+            echo "  --download           Auto-download clean attachments after display"
             echo "  --help, -h           Show this help"
             echo ""
             echo "Examples:"
@@ -91,7 +97,7 @@ MESSAGE=$(read_message "$MESSAGE_ID" "$BOX")
 
 # Mark as read (inbox only)
 if [ "$MARK_READ" = true ] && [ "$BOX" = "inbox" ]; then
-    mark_as_read "$MESSAGE_ID" 2>/dev/null || true
+    mark_as_read "$MESSAGE_ID" 2>/dev/null || echo "Warning: Could not mark message as read" >&2
 fi
 
 # JSON output
@@ -201,4 +207,11 @@ echo "  Reply:    amp-reply ${id} \"Your reply message\""
 echo "  Delete:   amp-delete ${id}"
 if [ "$att_count" -gt 0 ]; then
     echo "  Download: amp-download ${id} --all"
+fi
+
+# Auto-download attachments if requested
+if [ "$AUTO_DOWNLOAD" = true ] && [ "$att_count" -gt 0 ]; then
+    echo ""
+    echo "Auto-downloading attachments..."
+    "${SCRIPT_DIR}/amp-download.sh" "$id" --all
 fi

@@ -5,50 +5,121 @@ Official plugin marketplace for [AI Maestro](https://github.com/23blocks-OS/ai-m
 ## Quick Install
 
 ```bash
-# Add marketplace
+# Add marketplace and install in one step
 /install 23blocks-OS/ai-maestro-plugins
-
-# Install the plugin
 /install ai-maestro@ai-maestro-plugins
 ```
 
+That's it. You get 6 skills, 39 scripts, and 3 hooks.
+
 ## What's Included
 
-### Skills (6)
+| Skill | Description | Standalone? |
+|-------|-------------|-------------|
+| `memory-search` | Search conversation history | No |
+| `docs-search` | Search auto-generated documentation | No |
+| `graph-query` | Query code graph relationships | No |
+| `agent-messaging` | AMP messaging between agents | No |
+| `ai-maestro-agents-management` | Manage AI agents | No |
+| `planning` | Task planning with persistent markdown files | **Yes** |
 
-| Skill | Description | Requires AI Maestro Service? |
-|-------|-------------|------------------------------|
-| `memory-search` | Search conversation history for previous discussions | YES |
-| `docs-search` | Search auto-generated documentation for APIs | YES |
-| `graph-query` | Query code graph to understand relationships | YES |
-| `agent-messaging` | Send and receive messages between AI agents (AMP) | YES |
-| `ai-maestro-agents-management` | Manage AI agents (list, export, import) | YES |
-| `planning` | Complex task execution with persistent markdown files | **NO - Standalone** |
+Skills marked "No" require the AI Maestro service running on localhost:23000.
 
-### Hooks (3)
+## Build Your Own Plugin
 
-| Event | Purpose |
-|-------|---------|
-| `SessionStart` | Check for unread messages, broadcast session status |
-| `Stop` | Update session status when Claude finishes |
-| `Notification` | Track idle/permission prompts for Chat UI |
+This repo is also a **build system**. The pre-built plugin at `plugins/ai-maestro/` is assembled from sources declared in `plugin.manifest.json`.
 
-### CLI Scripts (39)
+### How it works
 
-All scripts are bundled in `plugins/ai-maestro/scripts/`. Install to your PATH with:
-
-```bash
-# From AI Maestro app repo
-./install-messaging.sh -y
+```
+plugin.manifest.json     declares sources (local dirs, git repos)
+        |
+  build-plugin.sh        fetches sources, assembles output
+        |
+  plugins/ai-maestro/    self-contained plugin (what users install)
 ```
 
-**Categories:**
-- **AMP Messaging** (13): `amp-send`, `amp-inbox`, `amp-read`, `amp-reply`, `amp-delete`, `amp-init`, `amp-status`, `amp-register`, `amp-fetch`, `amp-download`, `amp-identity`, `amp-security`, `amp-helper`
-- **Code Graph** (9): `graph-describe`, `graph-find-callers`, `graph-find-callees`, `graph-find-related`, `graph-find-associations`, `graph-find-by-type`, `graph-find-path`, `graph-find-serializers`, `graph-index-delta`
-- **Documentation** (8): `docs-search`, `docs-index`, `docs-index-delta`, `docs-list`, `docs-get`, `docs-find-by-type`, `docs-stats`, `docs-helper`
-- **Memory** (2): `memory-search`, `memory-helper`
-- **Agent Management** (4): `aimaestro-agent`, `agent-helper`, `list-agents`, `export-agent`, `import-agent`
-- **Hooks** (1): `ai-maestro-hook.cjs`
+### Build from source
+
+```bash
+git clone https://github.com/23blocks-OS/ai-maestro-plugins.git
+cd ai-maestro-plugins
+./build-plugin.sh --clean
+```
+
+### Customize it
+
+Fork this repo, edit `plugin.manifest.json` to pick the skills you want:
+
+```json
+{
+  "name": "my-custom-agents",
+  "version": "1.0.0",
+  "output": "./plugins/my-custom-agents",
+  "plugin": {
+    "name": "my-custom-agents",
+    "version": "1.0.0",
+    "author": { "name": "you" }
+  },
+  "sources": [
+    {
+      "name": "ai-maestro-planning",
+      "type": "git",
+      "repo": "https://github.com/23blocks-OS/ai-maestro-plugins.git",
+      "ref": "main",
+      "map": {
+        "src/skills/planning": "skills/planning"
+      }
+    },
+    {
+      "name": "amp-messaging",
+      "type": "git",
+      "repo": "https://github.com/agentmessaging/claude-plugin.git",
+      "ref": "main",
+      "map": {
+        "skills/messaging": "skills/agent-messaging",
+        "scripts/*.sh": "scripts/"
+      }
+    },
+    {
+      "name": "my-skills",
+      "type": "local",
+      "path": "./my-stuff",
+      "map": {
+        "skills/*": "skills/",
+        "scripts/*": "scripts/"
+      }
+    }
+  ]
+}
+```
+
+Then `./build-plugin.sh --clean` and you have a custom plugin.
+
+### Repo structure
+
+```
+ai-maestro-plugins/
+├── plugin.manifest.json           # what to build (sources + mappings)
+├── build-plugin.sh                # assembles plugins/ from manifest
+├── .github/workflows/             # CI: auto-rebuild on push
+│
+├── src/                           # OUR source files
+│   ├── skills/                    #   5 skills (graph, memory, docs, planning, agents)
+│   ├── scripts/                   #   26 scripts (graph, docs, memory, agent mgmt)
+│   └── hooks/                     #   session tracking hooks
+│
+├── .claude-plugin/marketplace.json  # makes this a valid marketplace
+└── plugins/ai-maestro/              # BUILD OUTPUT (pre-built, committed)
+    ├── .claude-plugin/plugin.json
+    ├── skills/                      # all 6 skills assembled
+    ├── scripts/                     # all 39 scripts assembled
+    └── hooks/
+```
+
+`src/` = our code. `plugins/` = build output. CI keeps them in sync.
+
+External sources (like AMP messaging) are fetched from their repos at build time — no manual copying, no stale snapshots.
 
 ## Full AI Maestro Installation
 

@@ -60,7 +60,8 @@ detect_injection_patterns() {
     local flags="[]"
 
     # Convert content to lowercase for case-insensitive matching
-    local content_lower=$(echo "$content" | tr '[:upper:]' '[:lower:]')
+    # Use LC_ALL=C for consistent behavior across locales with UTF-8 content
+    local content_lower=$(echo "$content" | LC_ALL=C tr '[:upper:]' '[:lower:]')
 
     for pattern_def in "${INJECTION_PATTERNS[@]}"; do
         # Parse pattern definition
@@ -104,22 +105,13 @@ determine_trust_level() {
         return
     fi
 
-    # Parse sender's address to get tenant using same logic as parse_address()
-    # For name@tenant.provider.tld, tenant is the segment before the 2-part provider domain
+    # Use parse_address() from amp-helper.sh for consistent address parsing (IMPL-02)
     local sender_tenant=""
-    if [[ "$from_address" == *"@"* ]]; then
-        local domain="${from_address#*@}"
-        IFS='.' read -ra _parts <<< "$domain"
-        local _num_parts=${#_parts[@]}
-        if [ "$_num_parts" -ge 3 ]; then
-            # Provider = last 2 parts, tenant = part before provider
-            sender_tenant="${_parts[$((_num_parts-3))]}"
-        elif [ "$_num_parts" -eq 2 ]; then
-            sender_tenant="${_parts[0]}"
-        else
-            sender_tenant="default"
-        fi
+    if type parse_address &>/dev/null; then
+        parse_address "$from_address"
+        sender_tenant="${ADDR_TENANT:-default}"
     else
+        # Fallback if parse_address not available
         sender_tenant="default"
     fi
 
@@ -250,50 +242,11 @@ apply_content_security() {
 # Signature Verification
 # =============================================================================
 
-# Verify message signature using v1.1 canonical format
-# Canonical: from|to|subject|priority|in_reply_to|SHA256(payload)
-# Args: message_json, public_key_file
-# Returns: "true" or "false"
-verify_message_signature() {
-    local message_json="$1"
-    local public_key_file="$2"
-
-    # Check if public key exists
-    if [ ! -f "$public_key_file" ]; then
-        echo "false"
-        return
-    fi
-
-    # Extract signature
-    local signature=$(echo "$message_json" | jq -r '.envelope.signature // empty')
-    if [ -z "$signature" ]; then
-        echo "false"
-        return
-    fi
-
-    # Extract envelope fields for v1.1 canonical format
-    local from=$(echo "$message_json" | jq -r '.envelope.from // ""')
-    local to=$(echo "$message_json" | jq -r '.envelope.to // ""')
-    local subject=$(echo "$message_json" | jq -r '.envelope.subject // ""')
-    local priority=$(echo "$message_json" | jq -r '.envelope.priority // "normal"')
-    local in_reply_to=$(echo "$message_json" | jq -r '.envelope.in_reply_to // ""')
-
-    # Compute payload hash: Base64(SHA256(compact_payload)) — must match amp-send.sh signing format
-    local payload_hash=$(echo "$message_json" | jq -c '.payload' | tr -d '\n' | \
-        ${OPENSSL_BIN:-openssl} dgst -sha256 -binary 2>/dev/null | base64 | tr -d '\n')
-
-    # Build v1.1 canonical string
-    local canonical="${from}|${to}|${subject}|${priority}|${in_reply_to}|${payload_hash}"
-
-    # Verify using verify_signature helper from amp-helper.sh
-    local result
-    result=$(verify_signature "$canonical" "$signature" "$public_key_file" 2>/dev/null)
-    if [ "$result" = "true" ]; then
-        echo "true"
-    else
-        echo "false"
-    fi
-}
+# NOTE: CLI-side signature verification at read time is not yet implemented.
+# Currently, signatures are only verified at fetch time (amp-fetch.sh) for
+# external providers. A future version will integrate read-time verification
+# when sender public key lookup is available via provider API.
+# See: protocol spec Section 07 for verification requirements.
 
 # =============================================================================
 # Utility: Check if content is already wrapped

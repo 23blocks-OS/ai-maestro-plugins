@@ -68,10 +68,9 @@ if [ -d "$AMP_INBOX_DIR" ]; then
     INBOX_COUNT=$(find "$AMP_INBOX_DIR" -name "*.json" -type f 2>/dev/null | wc -l | tr -d ' ')
     # Count unread messages - use grep for performance (avoids spawning jq per file)
     # Messages are "unread" if they contain "unread" as a status value, or have no status at all
-    _all_json_files=$(find "$AMP_INBOX_DIR" -name "*.json" -type f 2>/dev/null)
-    if [ -n "$_all_json_files" ]; then
-        # Count files that do NOT contain a "read" status (unread = no "read" status found)
-        _read_count=$(echo "$_all_json_files" | xargs grep -l '"status"[[:space:]]*:[[:space:]]*"read"' 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$INBOX_COUNT" -gt 0 ]; then
+        # Count files that contain a "read" status (unread = total - read)
+        _read_count=$(find "$AMP_INBOX_DIR" -name "*.json" -type f -exec grep -l '"status"[[:space:]]*:[[:space:]]*"read"' {} + 2>/dev/null | wc -l | tr -d ' ')
         UNREAD_COUNT=$(( INBOX_COUNT - _read_count ))
     fi
 fi

@@ -56,7 +56,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --help, -h           Show this help"
             echo ""
             echo "Examples:"
-            echo "  amp-init --auto                    # Auto-detect from tmux/git"
+            echo "  amp-init --auto                    # Auto-detect from environment"
             echo "  amp-init --name backend-api       # Set specific name"
             echo "  amp-init -n myagent               # Tenant auto-detected"
             exit 0

@@ -11,7 +11,7 @@
 #
 # =============================================================================
 
-# Note: set -e intentionally omitted — read_message may fail and we handle it below
+# Note: set -e is inherited from amp-helper.sh; read_message failure handled via || true
 
 # Source helper functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -111,7 +111,7 @@ fi
 ORIGINAL_FROM=$(echo "$ORIGINAL" | jq -r '.envelope.from')
 ORIGINAL_SUBJECT=$(echo "$ORIGINAL" | jq -r '.envelope.subject')
 ORIGINAL_PRIORITY=$(echo "$ORIGINAL" | jq -r '.envelope.priority')
-ORIGINAL_THREAD=$(echo "$ORIGINAL" | jq -r '.envelope.thread_id')
+ORIGINAL_THREAD=$(echo "$ORIGINAL" | jq -r '.envelope.thread_id // empty')
 
 # Use original priority if not overridden
 if [ -z "$PRIORITY" ]; then

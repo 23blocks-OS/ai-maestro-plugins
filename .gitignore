@@ -8,3 +8,6 @@
 
 # Node
 node_modules/
+
+# Build cache (cloned external sources)
+.build-cache/

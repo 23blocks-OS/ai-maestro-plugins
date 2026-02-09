@@ -168,7 +168,11 @@ download_single_attachment() {
         return 1
     fi
 
-    if [ "$att_scan" = "pending" ] || [ "$att_scan" = "unknown" ]; then
+    if [ "$att_scan" = "basic_clean" ]; then
+        echo "  ℹ️  Note: ${att_filename} passed basic checks only (no AV scan)"
+    elif [ "$att_scan" = "unscanned" ]; then
+        echo "  ⚠️  Warning: ${att_filename} was not scanned (local delivery)"
+    elif [ "$att_scan" = "pending" ] || [ "$att_scan" = "unknown" ]; then
         echo "  ⚠️  Warning: ${att_filename} scan status is '${att_scan}'"
     fi
 
