@@ -335,7 +335,9 @@ run_claude_command() {
     _TEMP_FILES+=("$tmp_stdout" "$tmp_stderr")
 
     # Run command capturing both streams
-    (cd "$work_dir" && claude "${cmd_args[@]}" >"$tmp_stdout" 2>"$tmp_stderr")
+    # Unset CLAUDECODE to bypass nesting detection when invoked from within a Claude Code session.
+    # The unset is scoped to the subshell and cannot affect the parent session. (Fix for issue 9.1)
+    (cd "$work_dir" && unset CLAUDECODE && claude "${cmd_args[@]}" >"$tmp_stdout" 2>"$tmp_stderr")
     exit_code=$?
 
     # Output stdout
@@ -1138,7 +1140,7 @@ HELP
     fi
 
     # Validate program - must be in whitelist
-    local allowed_programs="claude-code claude codex aider cursor none terminal"
+    local allowed_programs="claude-code claude codex aider cursor gemini opencode none terminal"
     local program_lower="${program,,}"  # lowercase
     if [[ ! " $allowed_programs " =~ [[:space:]]${program_lower}[[:space:]] ]]; then
         print_error "Invalid program: $program"

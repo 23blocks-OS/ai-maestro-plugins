@@ -93,6 +93,8 @@ graph-index-delta.sh /path/to/project
 - First time: Does a full index + initializes file tracking metadata
 - Subsequent runs: Only indexes new/modified/deleted files
 
+> **Note:** There is no separate `graph-index.sh` script. `graph-index-delta.sh` handles both full indexing (on first run) and incremental updates (on subsequent runs).
+
 **Output shows:**
 - New files added
 - Modified files re-indexed
@@ -136,13 +138,19 @@ Use with `graph-find-by-type.sh`:
 - `component` - React/Vue components
 - `hook` - React hooks
 
+## Helper Scripts
+
+This skill relies on an internal helper script that provides shared utility functions:
+
+- **`graph-helper.sh`** - Sourced by the `graph-*.sh` tool scripts. Provides graph-specific API functions (`graph_query`, `init_graph`) and initialization logic. Located alongside the tool scripts in `~/.local/bin/` (installed) or `plugin/plugins/ai-maestro/scripts/` (source). If tool scripts fail with "common.sh not found", re-run the installer (`~/ai-maestro/install-graph-tools.sh`).
+
 ## Error Handling
 
 **Script not found:**
 - Check PATH: `which graph-describe.sh`
 - Verify scripts installed: `ls -la ~/.local/bin/graph-*.sh`
 - Scripts are installed to `~/.local/bin/` which should be in your PATH
-- If not found, run: `./install-graph-tools.sh`
+- If not found, run the installer from the AI Maestro project root: `~/ai-maestro/install-graph-tools.sh`
 
 **API connection fails:**
 - Ensure AI Maestro is running: `curl http://127.0.0.1:23000/api/hosts/identity`
@@ -154,9 +162,9 @@ Use with `graph-find-by-type.sh`:
 
 ## Installation
 
-If commands are not found:
+If commands are not found, run the installer from the AI Maestro project root:
 ```bash
-./install-graph-tools.sh
+~/ai-maestro/install-graph-tools.sh
 ```
 
 This installs scripts to `~/.local/bin/`.

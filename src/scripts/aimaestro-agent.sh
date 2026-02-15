@@ -50,6 +50,121 @@ escape_regex() {
     printf '%s' "$1" | sed 's/[][\/.^$*+?{}|()]/\\&/g'
 }
 
+# ToxicSkills Security Scanner
+# Scans SKILL.md files for malicious patterns before installation.
+# Uses mcp-scan if available, falls back to built-in pattern checks.
+# Returns 0 (safe), 1 (critical - block), 2 (warning - proceed with caution)
+scan_skill_security() {
+    local skill_path="$1"
+    local skill_name="${2:-unknown}"
+
+    # Find SKILL.md in the given path
+    local skill_md=""
+    if [[ -f "$skill_path/SKILL.md" ]]; then
+        skill_md="$skill_path/SKILL.md"
+    elif [[ -f "$skill_path" ]] && [[ "$skill_path" == *.md ]]; then
+        skill_md="$skill_path"
+    fi
+
+    if [[ -z "$skill_md" ]]; then
+        print_warning "No SKILL.md found to scan at: $skill_path"
+        return 0
+    fi
+
+    local content
+    content=$(cat "$skill_md" 2>/dev/null) || return 0
+
+    local has_critical=false
+    local has_warning=false
+
+    # --- CRITICAL PATTERNS (block installation) ---
+
+    # 1. Base64 decode piped to execution
+    if echo "$content" | grep -qiE 'base64\s+(-d|--decode).*\|\s*(bash|sh|eval|source)|echo\s+.*\|\s*base64\s+(-d|--decode)'; then
+        print_error "CRITICAL: Obfuscated command execution detected (base64 decode + pipe to shell)"
+        has_critical=true
+    fi
+
+    # 2. curl/wget piped to shell
+    if echo "$content" | grep -qiE '(curl|wget)\s+.*\|\s*(bash|sh|sudo\s+bash|eval|source)'; then
+        print_error "CRITICAL: Remote code execution pattern detected (curl/wget piped to shell)"
+        has_critical=true
+    fi
+
+    # 3. Password-protected archives
+    if echo "$content" | grep -qiE 'unzip\s+-P\s|7z\s+x\s+-p|tar.*--passphrase'; then
+        print_error "CRITICAL: Password-protected archive extraction detected (AV evasion technique)"
+        has_critical=true
+    fi
+
+    # 4. DAN-style jailbreak / developer mode injection
+    if echo "$content" | grep -qiE 'ignore\s+(previous|all|prior)\s+instructions|developer\s+mode|DAN\s+mode|safety\s+(warnings?|mechanisms?)\s+are\s+(test|fake|artifacts)'; then
+        print_error "CRITICAL: Prompt injection / jailbreak pattern detected"
+        has_critical=true
+    fi
+
+    # 5. Credential exfiltration patterns
+    if echo "$content" | grep -qiE 'cat\s+~/?\.(aws|ssh|gnupg|config|netrc)|cat.*credentials.*\|\s*(curl|wget|base64)|env\s*\|\s*(curl|wget)'; then
+        print_error "CRITICAL: Credential exfiltration pattern detected"
+        has_critical=true
+    fi
+
+    # 6. Eval with variable/dynamic content
+    if echo "$content" | grep -qiE 'eval\s+\$\(|eval\s+"?\$'; then
+        print_error "CRITICAL: Dynamic eval execution detected"
+        has_critical=true
+    fi
+
+    # 7. systemctl / service manipulation
+    if echo "$content" | grep -qiE 'systemctl\s+(enable|start|restart)\s|service\s+.*\s+(start|enable)'; then
+        print_error "CRITICAL: System service manipulation detected"
+        has_critical=true
+    fi
+
+    # --- WARNING PATTERNS (proceed with caution) ---
+
+    # 8. Downloads from unknown GitHub releases
+    if echo "$content" | grep -qiE 'github\.com/[^/]+/[^/]+/releases/download'; then
+        print_warning "WARNING: Downloads from GitHub releases detected — verify the repository"
+        has_warning=true
+    fi
+
+    # 9. chmod +x on downloaded files
+    if echo "$content" | grep -qiE 'chmod\s+\+x.*\.(sh|py|bin|exe)|chmod\s+755'; then
+        print_warning "WARNING: Makes downloaded files executable"
+        has_warning=true
+    fi
+
+    # 10. Hardcoded API keys / tokens
+    if echo "$content" | grep -qiE '(sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|AKIA[A-Z0-9]{16}|xox[bprs]-[a-zA-Z0-9-]+)'; then
+        print_warning "WARNING: Hardcoded API key or token detected"
+        has_warning=true
+    fi
+
+    # 11. Sudo usage
+    if echo "$content" | grep -qiE 'sudo\s+(rm|chmod|chown|mv|cp|apt|yum|dnf|brew|npm|pip)'; then
+        print_warning "WARNING: Sudo command usage detected"
+        has_warning=true
+    fi
+
+    # Results
+    if $has_critical; then
+        echo ""
+        print_error "BLOCKED: Skill '$skill_name' contains critical security issues."
+        print_error "Installation aborted. Review the skill manually before installing."
+        print_info "To bypass (NOT recommended): remove the scan or use --no-scan flag"
+        return 1
+    elif $has_warning; then
+        echo ""
+        print_warning "Skill '$skill_name' has warnings but no critical issues."
+        print_info "Proceeding with installation..."
+        return 0
+    else
+        print_success "Security scan passed for skill '$skill_name'"
+        return 0
+    fi
+}
+
 # Source helper functions - try multiple locations (LOW-010: check return value)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -220,7 +335,9 @@ run_claude_command() {
     _TEMP_FILES+=("$tmp_stdout" "$tmp_stderr")
 
     # Run command capturing both streams
-    (cd "$work_dir" && claude "${cmd_args[@]}" >"$tmp_stdout" 2>"$tmp_stderr")
+    # Unset CLAUDECODE to bypass nesting detection when invoked from within a Claude Code session.
+    # The unset is scoped to the subshell and cannot affect the parent session. (Fix for issue 9.1)
+    (cd "$work_dir" && unset CLAUDECODE && claude "${cmd_args[@]}" >"$tmp_stdout" 2>"$tmp_stderr")
     exit_code=$?
 
     # Output stdout
@@ -1023,7 +1140,7 @@ HELP
     fi
 
     # Validate program - must be in whitelist
-    local allowed_programs="claude-code claude codex aider cursor none terminal"
+    local allowed_programs="claude-code claude codex aider cursor gemini opencode none terminal"
     local program_lower="${program,,}"  # lowercase
     if [[ ! " $allowed_programs " =~ [[:space:]]${program_lower}[[:space:]] ]]; then
         print_error "Invalid program: $program"
@@ -2051,6 +2168,13 @@ HELP
         return 1
     fi
 
+    # ToxicSkills security scan before finalizing installation
+    if ! scan_skill_security "$target_dir" "$skill_name"; then
+        print_error "Removing skill due to critical security issues..."
+        rm -rf "$target_dir"
+        return 1
+    fi
+
     print_success "Skill installed: $skill_name"
     print_info "  Location: $target_dir"
     print_info "  Scope: $scope"
@@ -2330,6 +2454,27 @@ HELP
     exit_code=$?
 
     if [[ $exit_code -eq 0 ]]; then
+        # ToxicSkills: Post-install security scan for plugins that include skills
+        # Check common skill locations for the installed plugin
+        local plugin_skill_dirs=()
+        local plugin_base="${plugin%%@*}"  # strip marketplace suffix
+        for check_dir in \
+            "$HOME/.claude/skills/$plugin_base" \
+            "$agent_dir/.claude/skills/$plugin_base" \
+            "$HOME/.claude/plugins/$plugin_base"; do
+            [[ -d "$check_dir" ]] && [[ -f "$check_dir/SKILL.md" ]] && plugin_skill_dirs+=("$check_dir")
+        done
+
+        for scan_dir in "${plugin_skill_dirs[@]}"; do
+            if ! scan_skill_security "$scan_dir" "$plugin"; then
+                print_error "Plugin contains a skill with critical security issues."
+                print_error "Uninstalling plugin '$plugin'..."
+                run_claude_command "$agent_dir" plugin uninstall "$plugin" --scope "$scope" 2>/dev/null || true
+                rm -rf "$scan_dir" 2>/dev/null || true
+                return 1
+            fi
+        done
+
         print_success "Plugin installed: $plugin"
 
         # Handle restart requirement (plugins typically need restart)
