@@ -326,6 +326,45 @@ create_project_template() {
         return 1
     }
 
+    # Write .claude/settings.local.json with pre-approved tool permissions
+    # so agents created by AI Maestro don't require manual tool approval (Issue #223)
+    local tmp_settings
+    tmp_settings=$(mktemp) || {
+        print_error "Failed to create temp file for settings.local.json"
+        return 1
+    }
+
+    cat > "$tmp_settings" << 'SETTINGS'
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "Task(*)",
+      "mcp__*"
+    ]
+  }
+}
+SETTINGS
+    # shellcheck disable=SC2181
+    if [[ $? -ne 0 ]]; then
+        rm -f "$tmp_settings"
+        print_error "Failed to write settings.local.json content"
+        return 1
+    fi
+
+    mv "$tmp_settings" "$canonical_dir/.claude/settings.local.json" || {
+        rm -f "$tmp_settings"
+        print_error "Failed to create .claude/settings.local.json"
+        return 1
+    }
+
     # HIGH-1/HIGH-2: Use atomic write pattern - write to temp file first, then mv
     local tmp_claude tmp_gitignore
     tmp_claude=$(mktemp) || {
