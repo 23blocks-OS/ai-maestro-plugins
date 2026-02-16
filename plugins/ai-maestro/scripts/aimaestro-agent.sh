@@ -52,8 +52,8 @@ escape_regex() {
 
 # ToxicSkills Security Scanner
 # Scans SKILL.md files for malicious patterns before installation.
-# Uses mcp-scan if available, falls back to built-in pattern checks.
-# Returns 0 (safe), 1 (critical - block), 2 (warning - proceed with caution)
+# Built-in pattern checks for common attack vectors.
+# Returns 0 (safe or warnings only), 1 (critical - block)
 scan_skill_security() {
     local skill_path="$1"
     local skill_name="${2:-unknown}"
@@ -80,43 +80,43 @@ scan_skill_security() {
     # --- CRITICAL PATTERNS (block installation) ---
 
     # 1. Base64 decode piped to execution
-    if echo "$content" | grep -qiE 'base64\s+(-d|--decode).*\|\s*(bash|sh|eval|source)|echo\s+.*\|\s*base64\s+(-d|--decode)'; then
+    if printf '%s\n' "$content" | grep -qiE 'base64\s+(-d|--decode).*\|\s*(bash|sh|eval|source)|echo\s+.*\|\s*base64\s+(-d|--decode)'; then
         print_error "CRITICAL: Obfuscated command execution detected (base64 decode + pipe to shell)"
         has_critical=true
     fi
 
     # 2. curl/wget piped to shell
-    if echo "$content" | grep -qiE '(curl|wget)\s+.*\|\s*(bash|sh|sudo\s+bash|eval|source)'; then
+    if printf '%s\n' "$content" | grep -qiE '(curl|wget)\s+.*\|\s*(bash|sh|sudo\s+bash|eval|source)'; then
         print_error "CRITICAL: Remote code execution pattern detected (curl/wget piped to shell)"
         has_critical=true
     fi
 
     # 3. Password-protected archives
-    if echo "$content" | grep -qiE 'unzip\s+-P\s|7z\s+x\s+-p|tar.*--passphrase'; then
+    if printf '%s\n' "$content" | grep -qiE 'unzip\s+-P\s|7z\s+x\s+-p|tar.*--passphrase'; then
         print_error "CRITICAL: Password-protected archive extraction detected (AV evasion technique)"
         has_critical=true
     fi
 
     # 4. DAN-style jailbreak / developer mode injection
-    if echo "$content" | grep -qiE 'ignore\s+(previous|all|prior)\s+instructions|developer\s+mode|DAN\s+mode|safety\s+(warnings?|mechanisms?)\s+are\s+(test|fake|artifacts)'; then
+    if printf '%s\n' "$content" | grep -qiE 'ignore\s+(previous|all|prior)\s+instructions|developer\s+mode|DAN\s+mode|safety\s+(warnings?|mechanisms?)\s+are\s+(test|fake|artifacts)'; then
         print_error "CRITICAL: Prompt injection / jailbreak pattern detected"
         has_critical=true
     fi
 
     # 5. Credential exfiltration patterns
-    if echo "$content" | grep -qiE 'cat\s+~/?\.(aws|ssh|gnupg|config|netrc)|cat.*credentials.*\|\s*(curl|wget|base64)|env\s*\|\s*(curl|wget)'; then
+    if printf '%s\n' "$content" | grep -qiE 'cat\s+~/?\.(aws|ssh|gnupg|config|netrc)|cat.*credentials.*\|\s*(curl|wget|base64)|env\s*\|\s*(curl|wget)'; then
         print_error "CRITICAL: Credential exfiltration pattern detected"
         has_critical=true
     fi
 
     # 6. Eval with variable/dynamic content
-    if echo "$content" | grep -qiE 'eval\s+\$\(|eval\s+"?\$'; then
+    if printf '%s\n' "$content" | grep -qiE 'eval\s+\$\(|eval\s+"?\$'; then
         print_error "CRITICAL: Dynamic eval execution detected"
         has_critical=true
     fi
 
     # 7. systemctl / service manipulation
-    if echo "$content" | grep -qiE 'systemctl\s+(enable|start|restart)\s|service\s+.*\s+(start|enable)'; then
+    if printf '%s\n' "$content" | grep -qiE 'systemctl\s+(enable|start|restart)\s|service\s+.*\s+(start|enable)'; then
         print_error "CRITICAL: System service manipulation detected"
         has_critical=true
     fi
@@ -124,25 +124,25 @@ scan_skill_security() {
     # --- WARNING PATTERNS (proceed with caution) ---
 
     # 8. Downloads from unknown GitHub releases
-    if echo "$content" | grep -qiE 'github\.com/[^/]+/[^/]+/releases/download'; then
+    if printf '%s\n' "$content" | grep -qiE 'github\.com/[^/]+/[^/]+/releases/download'; then
         print_warning "WARNING: Downloads from GitHub releases detected — verify the repository"
         has_warning=true
     fi
 
     # 9. chmod +x on downloaded files
-    if echo "$content" | grep -qiE 'chmod\s+\+x.*\.(sh|py|bin|exe)|chmod\s+755'; then
+    if printf '%s\n' "$content" | grep -qiE 'chmod\s+\+x.*\.(sh|py|bin|exe)|chmod\s+755'; then
         print_warning "WARNING: Makes downloaded files executable"
         has_warning=true
     fi
 
     # 10. Hardcoded API keys / tokens
-    if echo "$content" | grep -qiE '(sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|AKIA[A-Z0-9]{16}|xox[bprs]-[a-zA-Z0-9-]+)'; then
+    if printf '%s\n' "$content" | grep -qiE '(sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|AKIA[A-Z0-9]{16}|xox[bprs]-[a-zA-Z0-9-]+)'; then
         print_warning "WARNING: Hardcoded API key or token detected"
         has_warning=true
     fi
 
     # 11. Sudo usage
-    if echo "$content" | grep -qiE 'sudo\s+(rm|chmod|chown|mv|cp|apt|yum|dnf|brew|npm|pip)'; then
+    if printf '%s\n' "$content" | grep -qiE 'sudo\s+(rm|chmod|chown|mv|cp|apt|yum|dnf|brew|npm|pip)'; then
         print_warning "WARNING: Sudo command usage detected"
         has_warning=true
     fi
@@ -152,7 +152,7 @@ scan_skill_security() {
         echo ""
         print_error "BLOCKED: Skill '$skill_name' contains critical security issues."
         print_error "Installation aborted. Review the skill manually before installing."
-        print_info "To bypass (NOT recommended): remove the scan or use --no-scan flag"
+        print_info "To bypass (NOT recommended): review the skill manually and install the files directly"
         return 1
     elif $has_warning; then
         echo ""
@@ -1142,7 +1142,7 @@ HELP
     # Validate program - must be in whitelist
     local allowed_programs="claude-code claude codex aider cursor gemini opencode none terminal"
     local program_lower="${program,,}"  # lowercase
-    if [[ ! " $allowed_programs " =~ [[:space:]]${program_lower}[[:space:]] ]]; then
+    if [[ ! " $allowed_programs " =~ [[:space:]]"${program_lower}"[[:space:]] ]]; then
         print_error "Invalid program: $program"
         print_error "Allowed programs: $allowed_programs"
         return 1

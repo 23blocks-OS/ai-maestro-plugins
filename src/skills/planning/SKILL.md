@@ -97,7 +97,7 @@ Before writing any code or making any changes:
 Before any major decision, re-read the plan:
 
 ```bash
-cat docs_dev/task_plan.md | head -50
+cat "${AIMAESTRO_PLANNING_DIR:-docs_dev}/task_plan.md" | head -50
 ```
 
 This refreshes your goals in the context window, preventing drift.
@@ -294,12 +294,12 @@ If missing, reinstall the skill or copy from AI Maestro repo.
 
 **Forgot the goal:**
 ```bash
-cat docs_dev/task_plan.md | head -20
+cat "${AIMAESTRO_PLANNING_DIR:-docs_dev}/task_plan.md" | head -20
 ```
 
 **Lost track of progress:**
 ```bash
-grep -E "^\s*-\s*\[" docs_dev/task_plan.md
+grep -E "^\s*-\s*\[" "${AIMAESTRO_PLANNING_DIR:-docs_dev}/task_plan.md"
 ```
 
 Shows all checkboxes and their status.
