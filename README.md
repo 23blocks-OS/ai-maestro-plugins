@@ -2,7 +2,7 @@
 
 **Build the exact set of skills your AI agent needs.**
 
-Remember when Neo sat in that chair and Trinity uploaded Kung Fu straight into his brain? Ten seconds later: *"I know Kung Fu."*
+Remember when Neo sat in that chair and Tank, the operator, uploaded Kung Fu straight into his brain? Ten seconds later: *"I know Kung Fu."*
 
 That's what this does for your Claude Code agents.
 
