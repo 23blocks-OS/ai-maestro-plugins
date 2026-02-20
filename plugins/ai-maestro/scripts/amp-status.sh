@@ -1,7 +1,6 @@
 #!/bin/bash
 # =============================================================================
 # AMP Status - Show Agent Messaging Status
-# BUILD-PIPELINE-TEST-MARKER: If you see this, the pipeline works end-to-end
 # =============================================================================
 #
 # Display your AMP configuration and registration status.

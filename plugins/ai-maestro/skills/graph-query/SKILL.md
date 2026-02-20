@@ -142,7 +142,7 @@ Use with `graph-find-by-type.sh`:
 
 This skill relies on an internal helper script that provides shared utility functions:
 
-- **`graph-helper.sh`** - Sourced by the `graph-*.sh` tool scripts. Provides graph-specific API functions (`graph_query`, `init_graph`) and initialization logic. Located alongside the tool scripts in `~/.local/bin/` (installed) or `plugin/plugins/ai-maestro/scripts/` (source). If tool scripts fail with "common.sh not found", re-run the installer (`~/ai-maestro/install-graph-tools.sh`).
+- **`graph-helper.sh`** - Sourced by the `graph-*.sh` tool scripts. Provides graph-specific API functions (`graph_query`, `init_graph`) and initialization logic. Located alongside the tool scripts in `~/.local/bin/` (installed) or `plugin/src/scripts/` (source). If tool scripts fail with "common.sh not found", re-run the installer (`~/ai-maestro/install-graph-tools.sh`).
 
 ## Error Handling
 

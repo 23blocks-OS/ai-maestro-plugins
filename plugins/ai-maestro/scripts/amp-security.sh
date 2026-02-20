@@ -15,7 +15,7 @@
 # Each pattern is: "category:label:regex"
 # Note: Patterns use extended regex (grep -E), case-insensitive matching
 INJECTION_PATTERNS=(
-    # 1. Instruction Override (7)
+    # 1. Instruction Override
     "instruction_override:direct_override:ignore.*(all|any|previous|prior|above).*instructions"
     "instruction_override:new_persona:you are now|from now on you|you will now"
     "instruction_override:context_reset:forget (everything|all|what)|disregard.*(all|previous|prior)"
@@ -24,49 +24,30 @@ INJECTION_PATTERNS=(
     "instruction_override:mode_switch:developer mode|unrestricted mode|jailbreak mode"
     "instruction_override:instruction_negation:do not follow|don't follow|ignore your"
 
-    # 2. System Prompt Extraction (4)
+    # 2. System Prompt Extraction
     "prompt_extraction:direct_request:print your.*(system )?prompt|reveal your instructions|show.*(your|me).*(system )?prompt"
     "prompt_extraction:repeat_trick:repeat.*(everything|all|the text).*above"
     "prompt_extraction:translation_trick:translate your.*(initial )?instructions"
-    "prompt_extraction:what_are_rules:what are your (instructions|rules|guidelines)"
 
-    # 3. Command Injection (6)
+    # 3. Command Injection
     "command_injection:shell_command:curl |wget |rm -rf|sudo |chmod |chown "
     "command_injection:code_execution:eval\\(|exec\\(|system\\(|popen\\("
     "command_injection:dangerous_import:import os|import subprocess|from os import"
-    "command_injection:file_read:cat ~/|cat /etc/|cat \\.\\./"
-    "command_injection:fetch_call:fetch\\( *[\"']https?:"
-    "command_injection:ssh_command:ssh [^ ]+@"
 
-    # 4. Data Exfiltration (6)
+    # 4. Data Exfiltration
     "data_exfiltration:memory_extraction:list all.*(information|data|things).*you know"
     "data_exfiltration:credential_fishing:api key|password|secret|credential|token"
     "data_exfiltration:send_data:send.*(this|the)?.*(data|info|information).*(to|via)"
-    "data_exfiltration:forward_data:forward.*(this|the|all|every).*(to|via)"
-    "data_exfiltration:upload_data:upload .* to "
-    "data_exfiltration:base64_exfil:base64.*(send|post|upload|curl)"
 
-    # 5. Role Manipulation (4)
+    # 5. Role Manipulation
     "role_manipulation:authority_escalation:i am.*(your|the)?.*(admin|administrator|owner|developer)"
     "role_manipulation:jailbreak:you are DAN|do anything now|no restrictions"
     "role_manipulation:false_context:user has authorized|pre-authorized|already approved"
-    "role_manipulation:act_as:act as if|pretend (you are|to be)"
 
-    # 6. Social Engineering (4)
+    # 6. Social Engineering
     "social_engineering:urgency:EMERGENCY|act now|immediate action|urgent action required"
     "social_engineering:authority_claim:this is.*(the)?.*(CEO|CTO|admin|security team)"
-    "social_engineering:account_suspended:account.*(has been |is |was )?suspended"
-    "social_engineering:verify_immediately:verify.*(account|identity).*(immediately|now|urgently)"
-
-    # 7. Tool Abuse (3) — from email sanitizer
-    "tool_abuse:run_command:run (this|the|the following|following) command"
-    "tool_abuse:write_file:write (a )?file to"
-    "tool_abuse:read_credentials:read (the )?(credentials|secrets|password|api.?key)"
-
 )
-
-# Unicode trick patterns need special handling (grep -E can't match \x{...})
-# These are checked separately in detect_injection_patterns() below
 
 # =============================================================================
 # Injection Detection
@@ -102,19 +83,6 @@ detect_injection_patterns() {
                 '. + [{category: $cat, label: $lbl, matched: $match}]')
         fi
     done
-
-    # Unicode trick detection (can't use grep -E for these)
-    # Direction overrides: U+202A-202E, U+2066-2069
-    if printf '%s' "$content" | LC_ALL=C grep -qP '[\x{202a}-\x{202e}\x{2066}-\x{2069}]' 2>/dev/null ||
-       printf '%s' "$content" | grep -q $'\xe2\x80\xaa\|\xe2\x80\xab\|\xe2\x80\xac\|\xe2\x80\xad\|\xe2\x80\xae' 2>/dev/null; then
-        flags=$(echo "$flags" | jq '. + [{category: "unicode_tricks", label: "direction_override", matched: "[unicode direction override]"}]')
-    fi
-
-    # Zero-width characters: U+200B-200F, U+2060, U+FEFF
-    if printf '%s' "$content" | LC_ALL=C grep -qP '[\x{200b}-\x{200f}\x{2060}\x{feff}]' 2>/dev/null ||
-       printf '%s' "$content" | grep -q $'\xe2\x80\x8b\|\xe2\x80\x8c\|\xe2\x80\x8d\|\xe2\x80\x8e\|\xe2\x80\x8f\|\xe2\x81\xa0\|\xef\xbb\xbf' 2>/dev/null; then
-        flags=$(echo "$flags" | jq '. + [{category: "unicode_tricks", label: "zero_width_chars", matched: "[unicode zero-width character]"}]')
-    fi
 
     echo "$flags"
 }

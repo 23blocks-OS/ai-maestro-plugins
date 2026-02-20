@@ -211,7 +211,7 @@ Without searching docs first, you will:
 
 This skill relies on an internal helper script that provides shared utility functions:
 
-- **`docs-helper.sh`** - Sourced by the `docs-*.sh` tool scripts. Provides documentation-specific API functions (`docs_query`, `docs_index`) and initialization logic. Located alongside the tool scripts in `~/.local/bin/` (installed) or `plugin/plugins/ai-maestro/scripts/` (source). If tool scripts fail with "common.sh not found", re-run the installer (`./install-doc-tools.sh`).
+- **`docs-helper.sh`** - Sourced by the `docs-*.sh` tool scripts. Provides documentation-specific API functions (`docs_query`, `docs_index`) and initialization logic. Located alongside the tool scripts in `~/.local/bin/` (installed) or `plugin/src/scripts/` (source). If tool scripts fail with "common.sh not found", re-run the installer (`./install-doc-tools.sh`).
 
 ## Error Handling
 

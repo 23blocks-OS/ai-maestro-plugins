@@ -112,7 +112,7 @@ if [ -z "$NAME" ]; then
         NAME=$(detect_agent_name) || true
         if [ -z "$NAME" ]; then
             echo "Error: Cannot auto-detect agent name." >&2
-            echo "Set AIM_AGENT_NAME, run inside tmux, or use --name <name>." >&2
+            echo "Set CLAUDE_AGENT_NAME, run inside tmux, or use --name <name>." >&2
             exit 1
         fi
         echo "Auto-detected agent name: ${NAME}"

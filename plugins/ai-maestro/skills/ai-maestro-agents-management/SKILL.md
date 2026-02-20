@@ -923,7 +923,7 @@ aimaestro-agent.sh skill uninstall backend-api debug-skill --scope local
 
 This skill relies on an internal helper script that provides shared utility functions:
 
-- **`agent-helper.sh`** - Sourced by `aimaestro-agent.sh`. Provides agent-specific utilities including API base URL resolution, agent name/ID lookups, tmux session management, and dependency checks (bash 4.0+, curl, jq). Located alongside the CLI script in `~/.local/bin/` (installed) or `plugin/plugins/ai-maestro/scripts/` (source). If the CLI script fails with dependency or API errors, check that `agent-helper.sh` is present in the same directory.
+- **`agent-helper.sh`** - Sourced by `aimaestro-agent.sh`. Provides agent-specific utilities including API base URL resolution, agent name/ID lookups, tmux session management, and dependency checks (bash 4.0+, curl, jq). Located alongside the CLI script in `~/.local/bin/` (installed) or `plugin/src/scripts/` (source). If the CLI script fails with dependency or API errors, check that `agent-helper.sh` is present in the same directory.
 
 ---
 

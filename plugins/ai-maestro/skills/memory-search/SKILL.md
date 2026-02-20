@@ -134,7 +134,7 @@ docs-search.sh "feature"         # What do docs say?
 
 This skill relies on an internal helper script that provides shared utility functions:
 
-- **`memory-helper.sh`** - Sourced by the `memory-*.sh` tool scripts. Provides memory-specific API functions (`memory_query`, `init_memory`) and initialization logic. Located alongside the tool scripts in `~/.local/bin/` (installed) or `plugin/plugins/ai-maestro/scripts/` (source). If tool scripts fail with "common.sh not found", re-run the installer (`./install-memory-tools.sh`).
+- **`memory-helper.sh`** - Sourced by the `memory-*.sh` tool scripts. Provides memory-specific API functions (`memory_query`, `init_memory`) and initialization logic. Located alongside the tool scripts in `~/.local/bin/` (installed) or `plugin/src/scripts/` (source). If tool scripts fail with "common.sh not found", re-run the installer (`./install-memory-tools.sh`).
 
 ## Error Handling
 

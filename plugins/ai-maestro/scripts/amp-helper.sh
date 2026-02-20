@@ -96,13 +96,11 @@ require_openssl() {
 #
 # Resolution order for AMP_DIR:
 #   1. Explicit AMP_DIR env var (set by AI Maestro wake/create routes)
-#   2. AIM_AGENT_ID env var → ~/.agent-messaging/agents/<uuid>/
-#   3. AIM_AGENT_NAME env var → ~/.agent-messaging/agents/<name>/
+#   2. CLAUDE_AGENT_ID env var → ~/.agent-messaging/agents/<uuid>/
+#   3. CLAUDE_AGENT_NAME env var → ~/.agent-messaging/agents/<name>/
 #      (symlink resolves to UUID dir if migrated)
 #   4. tmux session name → ~/.agent-messaging/agents/<name>/
 #      If the directory doesn't exist, it is auto-created.
-#
-# Note: CLAUDE_AGENT_ID/CLAUDE_AGENT_NAME are accepted for backward compatibility.
 #
 AMP_AGENTS_BASE="${HOME}/.agent-messaging/agents"
 
@@ -110,22 +108,18 @@ if [ -z "${AMP_DIR:-}" ]; then
     _amp_resolved=false
 
     # Priority 1: UUID (set by AI Maestro wake/create routes)
-    # Accept both new (AIM_) and legacy (CLAUDE_) env var names
-    _aim_id="${AIM_AGENT_ID:-${CLAUDE_AGENT_ID:-}}"
-    if [ -n "$_aim_id" ]; then
-        AMP_DIR="${AMP_AGENTS_BASE}/${_aim_id}"
+    if [ -n "${CLAUDE_AGENT_ID:-}" ]; then
+        AMP_DIR="${AMP_AGENTS_BASE}/${CLAUDE_AGENT_ID}"
         _amp_resolved=true
     fi
-    unset _aim_id
 
     # Priority 2: Agent name → look up UUID from .index.json
     if [ "$_amp_resolved" = false ]; then
         _amp_agent_name=""
 
-        # Try AIM_AGENT_NAME env var (set by AI Maestro per-session)
-        # Fall back to legacy CLAUDE_AGENT_NAME for backward compatibility
-        if [ -n "${AIM_AGENT_NAME:-${CLAUDE_AGENT_NAME:-}}" ]; then
-            _amp_agent_name="${AIM_AGENT_NAME:-${CLAUDE_AGENT_NAME:-}}"
+        # Try CLAUDE_AGENT_NAME env var (set by AI Maestro per-session)
+        if [ -n "${CLAUDE_AGENT_NAME:-}" ]; then
+            _amp_agent_name="${CLAUDE_AGENT_NAME}"
         # Fallback: tmux session name (strip _N multi-session suffix)
         elif [ -n "${TMUX:-}" ]; then
             _amp_agent_name=$(tmux display-message -p '#S' 2>/dev/null || true)
@@ -152,7 +146,7 @@ if [ -z "${AMP_DIR:-}" ]; then
 
     if [ "$_amp_resolved" = false ]; then
         echo "Error: Cannot determine agent name." >&2
-        echo "Set AIM_AGENT_ID, AIM_AGENT_NAME, or run inside a tmux session." >&2
+        echo "Set CLAUDE_AGENT_ID, CLAUDE_AGENT_NAME, or run inside a tmux session." >&2
         exit 1
     fi
     unset _amp_resolved
@@ -604,15 +598,15 @@ load_config() {
     # fallback). Auto-fix: update the config to match the authoritative name.
     #
     # The expected name comes from (in priority order):
-    #   1. AIM_AGENT_NAME env var (set by AI Maestro)
+    #   1. CLAUDE_AGENT_NAME env var (set by AI Maestro)
     #   2. Directory basename (only if it's NOT a UUID — UUID dirs are stable,
     #      the name lives in config.json)
     local _expected_name _addr_local_part _needs_fix=false
     _expected_name=""
 
-    # If AIM_AGENT_NAME is set, it's authoritative (fall back to legacy CLAUDE_AGENT_NAME)
-    if [ -n "${AIM_AGENT_NAME:-${CLAUDE_AGENT_NAME:-}}" ]; then
-        _expected_name="${AIM_AGENT_NAME:-${CLAUDE_AGENT_NAME:-}}"
+    # If CLAUDE_AGENT_NAME is set, it's authoritative
+    if [ -n "${CLAUDE_AGENT_NAME:-}" ]; then
+        _expected_name="${CLAUDE_AGENT_NAME}"
     else
         # Use directory basename only if it doesn't look like a UUID
         local _dir_basename
@@ -1312,9 +1306,9 @@ status_indicator() {
 
 # Try to detect agent name from environment
 detect_agent_name() {
-    # 1. Check AIM_AGENT_NAME env var (fall back to legacy CLAUDE_AGENT_NAME)
-    if [ -n "${AIM_AGENT_NAME:-${CLAUDE_AGENT_NAME:-}}" ]; then
-        echo "${AIM_AGENT_NAME:-${CLAUDE_AGENT_NAME:-}}"
+    # 1. Check CLAUDE_AGENT_NAME env var
+    if [ -n "${CLAUDE_AGENT_NAME:-}" ]; then
+        echo "$CLAUDE_AGENT_NAME"
         return 0
     fi
 
@@ -1823,8 +1817,8 @@ require_init() {
     if ! is_initialized; then
         # Auto-initialize: generate keys, save config, register
         local _agent_name=""
-        if [ -n "${AIM_AGENT_NAME:-${CLAUDE_AGENT_NAME:-}}" ]; then
-            _agent_name="${AIM_AGENT_NAME:-${CLAUDE_AGENT_NAME:-}}"
+        if [ -n "${CLAUDE_AGENT_NAME:-}" ]; then
+            _agent_name="${CLAUDE_AGENT_NAME}"
         elif [ -n "${TMUX:-}" ]; then
             _agent_name=$(tmux display-message -p '#S' 2>/dev/null || true)
             _agent_name="${_agent_name%_[0-9]*}"
@@ -1832,7 +1826,7 @@ require_init() {
 
         if [ -z "$_agent_name" ]; then
             echo "Error: Cannot determine agent name for auto-init." >&2
-            echo "Set AIM_AGENT_NAME or run inside a tmux session." >&2
+            echo "Set CLAUDE_AGENT_NAME or run inside a tmux session." >&2
             exit 1
         fi
 
