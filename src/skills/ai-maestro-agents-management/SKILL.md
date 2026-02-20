@@ -919,11 +919,19 @@ aimaestro-agent.sh skill uninstall backend-api debug-skill --scope local
 
 ---
 
-## Helper Scripts
+## Script Architecture
 
-This skill relies on an internal helper script that provides shared utility functions:
+The CLI is split into focused modules, all sourced by the main dispatcher:
 
-- **`agent-helper.sh`** - Sourced by `aimaestro-agent.sh`. Provides agent-specific utilities including API base URL resolution, agent name/ID lookups, tmux session management, and dependency checks (bash 4.0+, curl, jq). Located alongside the CLI script in `~/.local/bin/` (installed) or `plugin/src/scripts/` (source). If the CLI script fails with dependency or API errors, check that `agent-helper.sh` is present in the same directory.
+- **`aimaestro-agent.sh`** - Thin dispatcher (~108 lines). Sources all modules below, sets up cleanup trap, and routes commands.
+- **`agent-helper.sh`** - Shared utilities: colors, `print_*`, `resolve_agent`, `get_api_base`, API URL resolution, agent name/ID lookups.
+- **`agent-core.sh`** - Shared infrastructure: security scanning (ToxicSkills), validation, Claude CLI helpers, `safe_json_edit`, temp file management.
+- **`agent-commands.sh`** - CRUD commands: `list`, `show`, `create`, `delete`, `update`, `rename`, `export`, `import`.
+- **`agent-session.sh`** - Session lifecycle: `session add/remove/exec`, `hibernate`, `wake`, `restart`.
+- **`agent-skill.sh`** - Skill management: `skill list/add/remove/install/uninstall`.
+- **`agent-plugin.sh`** - Plugin management (10 subcommands) + marketplace (4 subcommands).
+
+All modules are located alongside the CLI script in `~/.local/bin/` (installed) or `plugin/src/scripts/` (source). Each module has a double-source guard to prevent re-sourcing. If the CLI fails with sourcing errors, verify all `agent-*.sh` files are present in the same directory.
 
 ---
 
