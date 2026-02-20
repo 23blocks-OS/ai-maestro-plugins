@@ -36,9 +36,21 @@ Anything important gets written to disk.
 
 ---
 
+## Output Directory
+
+Planning output files (`task_plan.md`, `findings.md`, `progress.md`) should be written to:
+
+1. The directory specified by the `AIMAESTRO_PLANNING_DIR` environment variable (if set)
+2. Otherwise, `docs_dev/` in the current project root
+3. Create the directory if it does not exist
+
+Do NOT write planning files to the project root — use `docs_dev/` to avoid cluttering the project.
+
+---
+
 ## The 3-File Pattern
 
-Create these files in your **project root** (not the skill directory):
+Create these files in `docs_dev/` (not the project root or the skill directory):
 
 | File | Purpose | Update When |
 |------|---------|-------------|
@@ -53,12 +65,16 @@ Create these files in your **project root** (not the skill directory):
 Before any complex task (3+ steps):
 
 ```bash
-# 1. Create planning files from templates
-cat ~/.claude/skills/planning/templates/task_plan.md > task_plan.md
-cat ~/.claude/skills/planning/templates/findings.md > findings.md
-cat ~/.claude/skills/planning/templates/progress.md > progress.md
+# 1. Determine output directory
+PLAN_DIR="${AIMAESTRO_PLANNING_DIR:-docs_dev}"
+mkdir -p "$PLAN_DIR"
 
-# 2. Edit task_plan.md with your specific goal and phases
+# 2. Create planning files from templates
+cat ~/.claude/skills/planning/templates/task_plan.md > "$PLAN_DIR/task_plan.md"
+cat ~/.claude/skills/planning/templates/findings.md > "$PLAN_DIR/findings.md"
+cat ~/.claude/skills/planning/templates/progress.md > "$PLAN_DIR/progress.md"
+
+# 3. Edit task_plan.md with your specific goal and phases
 ```
 
 Then follow the rules below.
@@ -81,7 +97,7 @@ Before writing any code or making any changes:
 Before any major decision, re-read the plan:
 
 ```bash
-cat task_plan.md | head -50
+cat "${AIMAESTRO_PLANNING_DIR:-docs_dev}/task_plan.md" | head -50
 ```
 
 This refreshes your goals in the context window, preventing drift.
@@ -229,7 +245,11 @@ Templates are in `~/.claude/skills/planning/templates/`:
 - `findings.md` - Research and discoveries
 - `progress.md` - Session logging
 
-Copy to your project root and customize.
+**Note:** The template path depends on how the skill was installed:
+- **User scope** (global): `~/.claude/skills/planning/templates/`
+- **Project scope** (local): `<project>/.claude/skills/planning/templates/`
+
+Copy to `docs_dev/` and customize.
 
 ---
 
@@ -239,7 +259,7 @@ Copy to your project root and customize.
 User: "Build a new authentication system"
 
 1. CREATE PLAN
-   - Copy templates to project root
+   - Copy templates to docs_dev/
    - Define goal: "Implement JWT authentication"
    - Break into phases: Research, Design, Implement, Test, Document
 
@@ -274,12 +294,12 @@ If missing, reinstall the skill or copy from AI Maestro repo.
 
 **Forgot the goal:**
 ```bash
-cat task_plan.md | head -20
+cat "${AIMAESTRO_PLANNING_DIR:-docs_dev}/task_plan.md" | head -20
 ```
 
 **Lost track of progress:**
 ```bash
-grep -E "^\s*-\s*\[" task_plan.md
+grep -E "^\s*-\s*\[" "${AIMAESTRO_PLANNING_DIR:-docs_dev}/task_plan.md"
 ```
 
 Shows all checkboxes and their status.

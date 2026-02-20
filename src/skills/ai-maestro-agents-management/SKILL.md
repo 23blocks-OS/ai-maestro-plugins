@@ -121,28 +121,36 @@ aimaestro-agent.sh show backend-api --format json
 
 **Output format:**
 ```
-═══════════════════════════════════════════════════════════════
-  Agent: backend-api
-═══════════════════════════════════════════════════════════════
+Agent: backend-api
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  ID:           a1b2c3d4-e5f6-7890-abcd-ef1234567890
-  Name:         backend-api
-  Status:       online
-  Program:      claude-code
-  Model:        claude-sonnet-4-20250514
+  ID:          a1b2c3d4-e5f6-7890-abcd-ef1234567890
+  Status:      online
+  Program:     claude-code
+  Model:       sonnet
+  Created:     2025-01-15T10:30:00Z
 
-  Working Dir:  /Users/dev/projects/backend
+  Working Directory:
+    /Users/dev/projects/backend
 
-  Task:         Implement REST API endpoints for user management
-  Args:         --continue --chrome
+  Sessions (1):
+    [0] backend-api (online)
 
-  Tags:         api, production, critical
+  Task:
+    Implement REST API endpoints for user management
 
-  Sessions:
-    [0] backend-api (online) - tmux session
+  Skills (2):
+    - git-workflow
+    - agent-messaging
 
-═══════════════════════════════════════════════════════════════
+  Tags: api, production, critical
 ```
+
+**Notes:**
+- The header line ("Agent: ...") is displayed in bold cyan
+- The separator uses `━` (U+2501 BOX DRAWINGS HEAVY HORIZONTAL)
+- "Working Directory:" and "Task:" are on their own lines with values indented below
+- Skills and Tags sections only appear if the agent has at least one skill or tag
 
 ---
 
@@ -161,7 +169,7 @@ aimaestro-agent.sh create <name> --dir <path> [options] [-- <program-args>...]
 
 **Optional Parameters:**
 - `-p, --program <program>` - Program to use (default: claude-code)
-- `-m, --model <model>` - Model override (e.g., claude-sonnet-4-20250514)
+- `-m, --model <model>` - Model override (e.g., sonnet)
 - `-t, --task <description>` - Task description
 - `--tags <tag1,tag2,...>` - Comma-separated tags
 - `--no-session` - Create agent without tmux session
@@ -235,7 +243,7 @@ aimaestro-agent.sh update <agent> [options]
 aimaestro-agent.sh update backend-api --task "Focus on payment integration"
 
 # Change model
-aimaestro-agent.sh update backend-api --model claude-sonnet-4-20250514
+aimaestro-agent.sh update backend-api --model sonnet
 
 # Replace all tags
 aimaestro-agent.sh update backend-api --tags "api,payments,stripe"
@@ -355,17 +363,6 @@ aimaestro-agent.sh wake backend-api
 # Wake and attach to session
 aimaestro-agent.sh wake backend-api --attach
 ```
-
-**First-Launch Behavior:**
-When an agent is woken for the first time (`launchCount` is 0), resume/continue flags are automatically stripped from `programArgs` since there is no prior session to resume. This applies per-program:
-- **Claude Code**: `--continue`, `-c`, `--resume`, `-r` are stripped
-- **Codex**: `resume --last`, `resume` are stripped
-- **Gemini CLI**: `--resume` is stripped
-- **Aider**: `--restore-chat-history` is stripped
-- **OpenCode**: `--continue`, `-c`, `--session`, `-s` are stripped
-- **Cursor**: `--resume`, `resume` are stripped
-
-On subsequent wakes (`launchCount` >= 1), full `programArgs` are used.
 
 ---
 
@@ -919,6 +916,14 @@ aimaestro-agent.sh skill uninstall backend-api debug-skill --scope local
 - Backing up agent configuration
 - Moving agent to another machine
 - Sharing agent setup with team
+
+---
+
+## Helper Scripts
+
+This skill relies on an internal helper script that provides shared utility functions:
+
+- **`agent-helper.sh`** - Sourced by `aimaestro-agent.sh`. Provides agent-specific utilities including API base URL resolution, agent name/ID lookups, tmux session management, and dependency checks (bash 4.0+, curl, jq). Located alongside the CLI script in `~/.local/bin/` (installed) or `plugin/src/scripts/` (source). If the CLI script fails with dependency or API errors, check that `agent-helper.sh` is present in the same directory.
 
 ---
 

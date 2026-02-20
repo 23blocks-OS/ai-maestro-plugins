@@ -92,6 +92,25 @@ memory-search.sh "error handling patterns" --mode semantic
 | `term` | Looking for exact function/class names |
 | `symbol` | Looking for code symbols mentioned |
 
+### Symbol Mode Examples
+
+The `symbol` mode is optimized for finding code symbols (function names, class names, variable names) mentioned in past conversations. Unlike `term` mode which does exact text matching, `symbol` mode understands code identifiers and matches them across different contexts.
+
+```bash
+# Find discussions where a specific function was mentioned
+memory-search.sh "processPayment" --mode symbol
+
+# Find conversations about a class
+memory-search.sh "AuthenticationService" --mode symbol
+
+# Find references to a variable or constant
+memory-search.sh "MAX_RETRY_COUNT" --mode symbol
+```
+
+**When to use `symbol` vs `term`:**
+- Use `--mode symbol` when searching for code identifiers (functions, classes, variables)
+- Use `--mode term` when searching for exact phrases or non-code text
+
 ## Why This Matters
 
 Without searching memory first, you will:
@@ -110,6 +129,12 @@ For complete context, use BOTH:
 memory-search.sh "feature"       # What did we discuss?
 docs-search.sh "feature"         # What do docs say?
 ```
+
+## Helper Scripts
+
+This skill relies on an internal helper script that provides shared utility functions:
+
+- **`memory-helper.sh`** - Sourced by the `memory-*.sh` tool scripts. Provides memory-specific API functions (`memory_query`, `init_memory`) and initialization logic. Located alongside the tool scripts in `~/.local/bin/` (installed) or `plugin/plugins/ai-maestro/scripts/` (source). If tool scripts fail with "common.sh not found", re-run the installer (`./install-memory-tools.sh`).
 
 ## Error Handling
 

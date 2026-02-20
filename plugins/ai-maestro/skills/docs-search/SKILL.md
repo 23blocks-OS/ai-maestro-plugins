@@ -73,7 +73,8 @@ All commands auto-detect your agent ID from the tmux session.
 ### Indexing Commands
 | Command | Description |
 |---------|-------------|
-| `docs-index.sh [project-path]` | Index documentation from project |
+| `docs-index.sh [project-path]` | Full index documentation from project |
+| `docs-index-delta.sh [project-path]` | **Delta index** - only index new and modified files |
 
 ## What to Search Based on User Instruction
 
@@ -145,6 +146,18 @@ docs-index.sh
 docs-index.sh /path/to/project
 ```
 
+### Delta Index Documentation
+
+```bash
+# Delta index - only process new and modified files (much faster)
+docs-index-delta.sh
+
+# Delta index a specific project
+docs-index-delta.sh /path/to/project
+```
+
+Use delta indexing for incremental updates after code changes. Use full `docs-index.sh` for a complete re-index.
+
 ## Document Types
 
 The following document types are recognized:
@@ -194,13 +207,19 @@ Without searching docs first, you will:
 
 **Doc search takes 1 second. Redoing work takes hours.**
 
+## Helper Scripts
+
+This skill relies on an internal helper script that provides shared utility functions:
+
+- **`docs-helper.sh`** - Sourced by the `docs-*.sh` tool scripts. Provides documentation-specific API functions (`docs_query`, `docs_index`) and initialization logic. Located alongside the tool scripts in `~/.local/bin/` (installed) or `plugin/plugins/ai-maestro/scripts/` (source). If tool scripts fail with "common.sh not found", re-run the installer (`./install-doc-tools.sh`).
+
 ## Error Handling
 
 **Script not found:**
 - Check PATH: `which docs-search.sh`
 - Verify scripts installed: `ls -la ~/.local/bin/docs-*.sh`
 - Scripts are installed to `~/.local/bin/` which should be in your PATH
-- If not found, run: `./install-docs-tools.sh`
+- If not found, run: `./install-doc-tools.sh`
 
 **API connection fails:**
 - Ensure AI Maestro is running: `curl http://127.0.0.1:23000/api/hosts/identity`
@@ -219,7 +238,7 @@ Without searching docs first, you will:
 
 If commands are not found:
 ```bash
-./install-docs-tools.sh
+./install-doc-tools.sh
 ```
 
 This installs scripts to `~/.local/bin/`.
