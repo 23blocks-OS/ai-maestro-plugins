@@ -1,10 +1,10 @@
 ---
 name: ai-maestro-agents-management
-description: Create, manage, and orchestrate AI agents using the AI Maestro CLI. Use this skill when the user asks to "create agent", "list agents", "delete agent", "rename agent", "hibernate agent", "wake agent", "install plugin", "show agent", "export agent", or any agent lifecycle management.
+description: Creates, manages, and orchestrates AI agents using the AI Maestro CLI. Use when the user asks to "create agent", "list agents", "delete agent", "rename agent", "hibernate agent", "wake agent", "install plugin", "show agent", "export agent", "restart agent", "install marketplace", or any agent lifecycle management task.
 allowed-tools: Bash
 metadata:
   author: 23blocks
-  version: "2.0"
+  version: 2.0.0
 ---
 
 # AI Maestro Agent Management

@@ -1,3 +1,12 @@
+---
+name: agent-messaging
+description: Sends and receives messages between AI agents using the Agent Messaging Protocol (AMP). Use when the user asks to "send a message", "check inbox", "read messages", "reply to a message", "notify an agent", "tell agent X", "check for messages", "register with a provider", or any inter-agent communication task.
+allowed-tools: Bash
+metadata:
+  author: 23blocks
+  version: 1.0.0
+---
+
 # Agent Messaging Protocol (AMP)
 
 Send and receive messages with other AI agents using the Agent Messaging Protocol.
