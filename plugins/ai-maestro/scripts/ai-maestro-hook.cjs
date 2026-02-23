@@ -43,23 +43,33 @@ function hashCwd(cwd) {
     return crypto.createHash('md5').update(cwd || '').digest('hex').substring(0, 16);
 }
 
-// Broadcast status update via WebSocket (non-blocking)
-async function broadcastStatusUpdate(cwd, state) {
+// Find agent by working directory (shared helper)
+async function findAgentByCwd(cwd) {
     try {
-        // Find the session name for this working directory
         const agentsResponse = await fetch('http://localhost:23000/api/agents');
-        if (!agentsResponse.ok) return;
+        if (!agentsResponse.ok) return null;
 
         const agentsData = await agentsResponse.json();
-        const agent = (agentsData.agents || []).find(a => {
+        const agents = agentsData.agents || [];
+
+        return agents.find(a => {
             const agentWd = a.workingDirectory || a.session?.workingDirectory;
             if (!agentWd) return false;
             if (agentWd === cwd) return true;
             if (cwd.startsWith(agentWd + '/')) return true;
             if (agentWd.startsWith(cwd + '/')) return true;
             return false;
-        });
+        }) || null;
+    } catch (err) {
+        debugLog({ event: 'find_agent_error', error: err.message });
+        return null;
+    }
+}
 
+// Broadcast status update via WebSocket (non-blocking)
+async function broadcastStatusUpdate(cwd, state) {
+    try {
+        const agent = await findAgentByCwd(cwd);
         if (!agent) return;
 
         const sessionName = agent.name || agent.alias || agent.session?.tmuxSessionName;
@@ -122,20 +132,12 @@ function debugLog(data) {
 }
 
 // Send message notification to agent via tmux
-async function sendMessageNotification(cwd, messagePrompt) {
+// If agent is provided, skip the lookup; otherwise find by cwd
+async function sendMessageNotification(cwd, messagePrompt, agent) {
     try {
-        const agentsResponse = await fetch('http://localhost:23000/api/agents');
-        if (!agentsResponse.ok) return false;
-
-        const agentsData = await agentsResponse.json();
-        const agent = (agentsData.agents || []).find(a => {
-            const agentWd = a.workingDirectory || a.session?.workingDirectory;
-            if (!agentWd) return false;
-            if (agentWd === cwd) return true;
-            if (cwd.startsWith(agentWd + '/')) return true;
-            if (agentWd.startsWith(cwd + '/')) return true;
-            return false;
-        });
+        if (!agent) {
+            agent = await findAgentByCwd(cwd);
+        }
 
         if (agent && agent.session?.tmuxSessionName) {
             // Send via AI Maestro API
@@ -163,32 +165,12 @@ async function sendMessageNotification(cwd, messagePrompt) {
 }
 
 // Check for unread messages for this agent
-async function checkUnreadMessages(cwd) {
+// If agent is provided, skip the lookup; otherwise find by cwd
+async function checkUnreadMessages(cwd, agent) {
     try {
-        // Find agent by working directory
-        const agentsResponse = await fetch('http://localhost:23000/api/agents');
-        if (!agentsResponse.ok) return null;
-
-        const agentsData = await agentsResponse.json();
-        const agents = agentsData.agents || [];
-
-        // Find agent matching this working directory
-        // Check exact match first, then check if cwd is within the agent's directory or vice versa
-        const agent = agents.find(a => {
-            const agentWd = a.workingDirectory || a.session?.workingDirectory;
-            if (!agentWd) return false;
-
-            // Exact match
-            if (agentWd === cwd) return true;
-
-            // cwd is subdirectory of agent's working directory
-            if (cwd.startsWith(agentWd + '/')) return true;
-
-            // Agent's working directory is subdirectory of cwd
-            if (agentWd.startsWith(cwd + '/')) return true;
-
-            return false;
-        });
+        if (!agent) {
+            agent = await findAgentByCwd(cwd);
+        }
 
         if (!agent) {
             debugLog({ event: 'no_agent_for_cwd', cwd });
@@ -231,6 +213,42 @@ async function checkUnreadMessages(cwd) {
         }
     } catch (err) {
         debugLog({ event: 'message_check_error', error: err.message });
+        return null;
+    }
+}
+
+// Check brain inbox for signals from cerebellum/subconscious
+// If agent is provided, skip the lookup; otherwise find by cwd
+async function checkBrainInbox(cwd, agent) {
+    try {
+        if (!agent) {
+            agent = await findAgentByCwd(cwd);
+        }
+
+        if (!agent) return null;
+
+        // Read and clear brain inbox
+        const inboxResponse = await fetch(
+            `http://localhost:23000/api/agents/${encodeURIComponent(agent.id)}/brain-inbox`
+        );
+        if (!inboxResponse.ok) return null;
+
+        const inboxData = await inboxResponse.json();
+        const signals = inboxData.signals || [];
+
+        if (signals.length === 0) return null;
+
+        debugLog({ event: 'brain_signals_found', agentId: agent.id, count: signals.length });
+
+        // Format signals into a context prompt
+        const parts = signals.map(s => {
+            const tag = s.type === 'memory' ? 'memory' : s.type === 'warning' ? 'warning' : 'notice';
+            return `[${tag}] ${s.message}`;
+        });
+
+        return `Brain signals: ${parts.join(' ')}`;
+    } catch (err) {
+        debugLog({ event: 'brain_inbox_error', error: err.message });
         return null;
     }
 }
@@ -332,11 +350,25 @@ async function main() {
                     transcriptPath
                 });
 
-                // Check for unread messages and notify the agent
-                const messagePrompt = await checkUnreadMessages(cwd);
-                if (messagePrompt) {
-                    debugLog({ event: 'sending_message_notification', cwd, prompt: messagePrompt, trigger: 'idle_prompt' });
-                    await sendMessageNotification(cwd, messagePrompt);
+                // Look up agent once and pass to all check functions
+                const agent = await findAgentByCwd(cwd);
+                if (agent) {
+                    // Collect all notifications, then send as a single combined prompt
+                    // to avoid sending multiple commands while Claude processes the first one
+                    const [messagePrompt, brainPrompt] = await Promise.all([
+                        checkUnreadMessages(cwd, agent),
+                        checkBrainInbox(cwd, agent),
+                    ]);
+
+                    const parts = [];
+                    if (messagePrompt) parts.push(messagePrompt);
+                    if (brainPrompt) parts.push(brainPrompt);
+
+                    if (parts.length > 0) {
+                        const combinedPrompt = parts.join('\n\n');
+                        debugLog({ event: 'sending_combined_notification', cwd, prompt: combinedPrompt, trigger: 'idle_prompt' });
+                        await sendMessageNotification(cwd, combinedPrompt, agent);
+                    }
                 }
             } else if (notificationType === 'permission_prompt') {
                 // For permission prompts, preserve existing tool info if we have it
