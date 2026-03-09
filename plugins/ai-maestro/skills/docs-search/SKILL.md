@@ -1,6 +1,6 @@
 ---
 name: docs-search
-description: Searches auto-generated codebase documentation for function signatures, API documentation, class definitions, and code comments. Use when the user asks to "search docs", "find documentation", "look up a function", "check the API", or before implementing any code changes to verify correct signatures and patterns.
+description: Searches auto-generated codebase documentation for function signatures, API documentation, class definitions, and code comments. Use when the user asks to "search docs", "find function", "check API", or before implementing anything to understand existing patterns.
 allowed-tools: Bash
 compatibility: Requires AI Maestro (aimaestro.dev) with Bash shell access
 metadata:

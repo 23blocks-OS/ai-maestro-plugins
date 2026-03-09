@@ -29,7 +29,7 @@
       "repo": "https://github.com/agentmessaging/claude-plugin.git",
       "ref": "main",
       "map": {
-        "skills/messaging": "skills/agent-messaging",
+        "skills/agent-messaging": "skills/agent-messaging",
         "scripts/*.sh": "scripts/"
       }
     }
