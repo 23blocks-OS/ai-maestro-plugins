@@ -1,11 +1,12 @@
 ---
 name: planning
 description: Creates and manages persistent markdown planning files (task_plan.md, findings.md, progress.md) for complex task execution. Use when the user asks to "create a plan", "track progress", "start a research project", or when a task requires more than 5 tool calls and needs structured phase tracking to stay focused and avoid goal drift.
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep
-user-invocable: true
+allowed-tools: Read Write Edit Bash Glob Grep
+compatibility: Requires Bash shell access for file operations
 metadata:
   author: 23blocks
   version: 1.0.0
+  user-invocable: "true"
 ---
 
 # AI Maestro Planning Skill
