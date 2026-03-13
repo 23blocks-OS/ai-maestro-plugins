@@ -1,0 +1,55 @@
+name: Update Role Plugin Version
+
+# Triggered by repository_dispatch from plugin repos
+# Each plugin repo sends: { "event_type": "plugin-version-update", "client_payload": { "plugin_name": "ai-maestro-chief-of-staff", "version": "2.10.3" } }
+on:
+  repository_dispatch:
+    types: [plugin-version-update]
+
+permissions:
+  contents: write
+
+jobs:
+  update-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate payload
+        run: |
+          PLUGIN_NAME="${{ github.event.client_payload.plugin_name }}"
+          VERSION="${{ github.event.client_payload.version }}"
+          if [ -z "$PLUGIN_NAME" ] || [ -z "$VERSION" ]; then
+            echo "ERROR: Missing plugin_name or version in payload"
+            exit 1
+          fi
+          # Only allow ai-maestro-* role plugins
+          if [[ ! "$PLUGIN_NAME" =~ ^ai-maestro- ]]; then
+            echo "ERROR: Only ai-maestro-* plugins can trigger version updates"
+            exit 1
+          fi
+          echo "Updating $PLUGIN_NAME to v$VERSION"
+
+      - name: Update marketplace.json
+        run: |
+          PLUGIN_NAME="${{ github.event.client_payload.plugin_name }}"
+          VERSION="${{ github.event.client_payload.version }}"
+          # Use jq to update the version of the matching plugin
+          jq --arg name "$PLUGIN_NAME" --arg ver "$VERSION" \
+            '(.plugins[] | select(.name == $name)).version = $ver' \
+            .claude-plugin/marketplace.json > /tmp/marketplace-updated.json
+          mv /tmp/marketplace-updated.json .claude-plugin/marketplace.json
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .claude-plugin/marketplace.json
+          if git diff --cached --quiet; then
+            echo "No version change detected"
+          else
+            PLUGIN_NAME="${{ github.event.client_payload.plugin_name }}"
+            VERSION="${{ github.event.client_payload.version }}"
+            git commit -m "chore: bump $PLUGIN_NAME to v$VERSION"
+            git push
+          fi

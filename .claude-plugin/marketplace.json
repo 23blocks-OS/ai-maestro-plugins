@@ -5,8 +5,8 @@
     "email": "hello@23blocks.com"
   },
   "metadata": {
-    "description": "Official AI Maestro plugins for Claude Code",
-    "version": "1.0.0",
+    "description": "Official AI Maestro plugins for Claude Code — core platform and role plugins",
+    "version": "2.0.0",
     "homepage": "https://github.com/23blocks-OS/ai-maestro",
     "repository": "https://github.com/23blocks-OS/ai-maestro-plugins"
   },
@@ -23,6 +23,108 @@
       "license": "MIT",
       "keywords": ["ai", "agents", "orchestration", "memory", "graph", "messaging", "amp"],
       "category": "productivity"
+    },
+    {
+      "name": "ai-maestro-assistant-manager-agent",
+      "source": {
+        "source": "github",
+        "repo": "Emasoft/ai-maestro-assistant-manager-agent"
+      },
+      "description": "Role-Plugin: Assistant Manager — user's right hand, sole interlocutor with user, directs other roles (architect, orchestrator, integrator)",
+      "version": "2.5.2",
+      "author": {
+        "name": "Emasoft",
+        "email": "713559+Emasoft@users.noreply.github.com"
+      },
+      "repository": "https://github.com/Emasoft/ai-maestro-assistant-manager-agent",
+      "license": "MIT",
+      "keywords": ["role-plugin", "assistant", "manager", "user-interface", "coordination", "approval", "ai-maestro"],
+      "category": "ai-maestro-roles"
+    },
+    {
+      "name": "ai-maestro-chief-of-staff",
+      "source": {
+        "source": "github",
+        "repo": "Emasoft/ai-maestro-chief-of-staff"
+      },
+      "description": "Role-Plugin: Chief of Staff — multi-agent lifecycle management, spawns, monitors, hibernates, and terminates Claude Code agents across projects",
+      "version": "2.10.2",
+      "author": {
+        "name": "Emasoft",
+        "email": "713559+Emasoft@users.noreply.github.com"
+      },
+      "repository": "https://github.com/Emasoft/ai-maestro-chief-of-staff",
+      "license": "MIT",
+      "keywords": ["role-plugin", "chief-of-staff", "agent-lifecycle", "multi-agent", "spawn", "hibernate", "ai-maestro"],
+      "category": "ai-maestro-roles"
+    },
+    {
+      "name": "ai-maestro-architect-agent",
+      "source": {
+        "source": "github",
+        "repo": "Emasoft/ai-maestro-architect-agent"
+      },
+      "description": "Role-Plugin: Architect — design documents, requirements analysis, architecture decisions, creates specifications for orchestrator",
+      "version": "2.1.3",
+      "author": {
+        "name": "Emasoft",
+        "email": "713559+Emasoft@users.noreply.github.com"
+      },
+      "repository": "https://github.com/Emasoft/ai-maestro-architect-agent",
+      "license": "MIT",
+      "keywords": ["role-plugin", "architect", "design", "planning", "documentation", "requirements", "ai-maestro"],
+      "category": "ai-maestro-roles"
+    },
+    {
+      "name": "ai-maestro-orchestrator-agent",
+      "source": {
+        "source": "github",
+        "repo": "Emasoft/ai-maestro-orchestrator-agent"
+      },
+      "description": "Role-Plugin: Orchestrator — task distribution, agent coordination, progress monitoring, executes architect's plans via subagents",
+      "version": "1.5.3",
+      "author": {
+        "name": "Emasoft",
+        "email": "713559+Emasoft@users.noreply.github.com"
+      },
+      "repository": "https://github.com/Emasoft/ai-maestro-orchestrator-agent",
+      "license": "MIT",
+      "keywords": ["role-plugin", "orchestrator", "task-management", "agents", "coordination", "delegation", "ai-maestro"],
+      "category": "ai-maestro-roles"
+    },
+    {
+      "name": "ai-maestro-integrator-agent",
+      "source": {
+        "source": "github",
+        "repo": "Emasoft/ai-maestro-integrator-agent"
+      },
+      "description": "Role-Plugin: Integrator — quality gates, testing, merging, release candidates, ensures code quality before integration",
+      "version": "1.1.17",
+      "author": {
+        "name": "Emasoft",
+        "email": "713559+Emasoft@users.noreply.github.com"
+      },
+      "repository": "https://github.com/Emasoft/ai-maestro-integrator-agent",
+      "license": "MIT",
+      "keywords": ["role-plugin", "integrator", "testing", "quality", "code-review", "github", "ai-maestro"],
+      "category": "ai-maestro-roles"
+    },
+    {
+      "name": "ai-maestro-programmer-agent",
+      "source": {
+        "source": "github",
+        "repo": "Emasoft/ai-maestro-programmer-agent"
+      },
+      "description": "Role-Plugin: Programmer — general-purpose code implementation, testing, and debugging across multiple languages",
+      "version": "1.0.16",
+      "author": {
+        "name": "Emasoft",
+        "email": "713559+Emasoft@users.noreply.github.com"
+      },
+      "repository": "https://github.com/Emasoft/ai-maestro-programmer-agent",
+      "license": "MIT",
+      "keywords": ["role-plugin", "programmer", "implementation", "coding", "testing", "debugging", "ai-maestro"],
+      "category": "ai-maestro-roles"
     }
   ]
 }
