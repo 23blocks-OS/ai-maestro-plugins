@@ -1,3 +1,0 @@
-[submodule "plugins/ai-maestro/amp-plugin"]
-	path = plugins/ai-maestro/amp-plugin
-	url = https://github.com/agentmessaging/claude-plugin.git
