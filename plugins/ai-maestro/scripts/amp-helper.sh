@@ -104,37 +104,49 @@ require_openssl() {
 #
 AMP_AGENTS_BASE="${HOME}/.agent-messaging/agents"
 
+# Case-insensitive name-to-UUID lookup via .index.json
+_index_lookup() {
+    local name="$1"
+    local index_file="${2:-${AMP_AGENTS_BASE}/.index.json}"
+    [ -f "$index_file" ] || return 1
+    local uuid
+    uuid=$(jq -r --arg name "$name" '.[$name] // empty' "$index_file" 2>/dev/null)
+    if [ -n "$uuid" ]; then echo "$uuid"; return 0; fi
+    # Case-insensitive fallback (spec: "Addresses are case-insensitive")
+    local lower_name
+    lower_name=$(echo "$name" | tr '[:upper:]' '[:lower:]')
+    uuid=$(jq -r --arg name "$lower_name" \
+        'to_entries[] | select(.key | ascii_downcase == $name) | .value' \
+        "$index_file" 2>/dev/null | head -1)
+    if [ -n "$uuid" ]; then echo "$uuid"; return 0; fi
+    return 1
+}
+
 if [ -z "${AMP_DIR:-}" ]; then
     _amp_resolved=false
 
-    # Priority 1: UUID (set by AI Maestro wake/create routes)
+    # Priority 1: AMP_DIR already set (AI Maestro sets this)
+    # (handled by the outer if)
+
+    # Priority 2: CLAUDE_AGENT_ID env var (UUID → direct directory)
+    #   --id <uuid> sets this in pre-source parsing (see each script)
     if [ -n "${CLAUDE_AGENT_ID:-}" ]; then
         AMP_DIR="${AMP_AGENTS_BASE}/${CLAUDE_AGENT_ID}"
         _amp_resolved=true
     fi
 
-    # Priority 2: Agent name → look up UUID from .index.json
+    # Priority 3: CLAUDE_AGENT_NAME env var or tmux → index lookup
     if [ "$_amp_resolved" = false ]; then
         _amp_agent_name=""
-
-        # Try CLAUDE_AGENT_NAME env var (set by AI Maestro per-session)
         if [ -n "${CLAUDE_AGENT_NAME:-}" ]; then
             _amp_agent_name="${CLAUDE_AGENT_NAME}"
-        # Fallback: tmux session name (strip _N multi-session suffix)
         elif [ -n "${TMUX:-}" ]; then
             _amp_agent_name=$(tmux display-message -p '#S' 2>/dev/null || true)
             _amp_agent_name="${_amp_agent_name%_[0-9]*}"
         fi
 
         if [ -n "$_amp_agent_name" ]; then
-            # Normalize to lowercase — index keys are always lowercase
-            _amp_agent_name=$(echo "$_amp_agent_name" | tr '[:upper:]' '[:lower:]')
-            # Look up UUID from name→UUID index
-            _amp_index_file="${AMP_AGENTS_BASE}/.index.json"
-            _amp_uuid=""
-            if [ -f "$_amp_index_file" ]; then
-                _amp_uuid=$(jq -r --arg name "$_amp_agent_name" '.[$name] // empty' "$_amp_index_file" 2>/dev/null)
-            fi
+            _amp_uuid=$(_index_lookup "$_amp_agent_name" 2>/dev/null) || true
             if [ -n "$_amp_uuid" ]; then
                 AMP_DIR="${AMP_AGENTS_BASE}/${_amp_uuid}"
             else
@@ -143,18 +155,54 @@ if [ -z "${AMP_DIR:-}" ]; then
             fi
             _amp_resolved=true
         fi
-        unset _amp_agent_name _amp_index_file _amp_uuid
+        unset _amp_agent_name _amp_uuid
+    fi
+
+    # Priority 4: Single agent auto-select (convenience for solo setups)
+    if [ "$_amp_resolved" = false ]; then
+        _amp_index_file="${AMP_AGENTS_BASE}/.index.json"
+        if [ -f "$_amp_index_file" ]; then
+            _amp_count=$(jq 'length' "$_amp_index_file" 2>/dev/null || echo "0")
+            if [ "$_amp_count" = "1" ]; then
+                _amp_uuid=$(jq -r 'to_entries[0].value' "$_amp_index_file" 2>/dev/null)
+                if [ -n "$_amp_uuid" ]; then
+                    AMP_DIR="${AMP_AGENTS_BASE}/${_amp_uuid}"
+                    _amp_resolved=true
+                fi
+            elif [ "$_amp_count" != "0" ]; then
+                echo "Error: Multiple AMP agents found. Use --id <uuid>" >&2
+                echo "" >&2
+                echo "Available agents:" >&2
+                while IFS= read -r _entry; do
+                    _e_name=$(echo "$_entry" | jq -r '.key')
+                    _e_uuid=$(echo "$_entry" | jq -r '.value')
+                    _e_addr=""
+                    _e_cfg="${AMP_AGENTS_BASE}/${_e_uuid}/config.json"
+                    if [ -f "$_e_cfg" ]; then
+                        _e_addr=$(jq -r '.agent.address // empty' "$_e_cfg" 2>/dev/null)
+                    fi
+                    if [ -n "$_e_addr" ]; then
+                        printf "  %-45s %s\n" "$_e_addr" "$_e_uuid" >&2
+                    else
+                        printf "  %-45s %s\n" "$_e_name" "$_e_uuid" >&2
+                    fi
+                done < <(jq -c 'to_entries[]' "$_amp_index_file" 2>/dev/null)
+                echo "" >&2
+                echo "Example: amp-inbox.sh --id <uuid-from-above>" >&2
+                exit 1
+            fi
+        fi
+        unset _amp_index_file _amp_count _amp_uuid
     fi
 
     if [ "$_amp_resolved" = false ]; then
-        echo "Error: Cannot determine agent name." >&2
-        echo "Set CLAUDE_AGENT_ID, CLAUDE_AGENT_NAME, or run inside a tmux session." >&2
+        echo "Error: AMP not initialized." >&2
+        echo "Run: amp-init.sh --name <your-agent-name>" >&2
         exit 1
     fi
     unset _amp_resolved
 
     # Auto-create per-agent directory if it doesn't exist
-    # (symlinks resolve transparently — if AMP_DIR is a symlink, -d follows it)
     if [ ! -d "$AMP_DIR" ]; then
         mkdir -p "${AMP_DIR}/keys"
         mkdir -p "${AMP_DIR}/messages/inbox"
@@ -647,6 +695,7 @@ save_config() {
     local name="$1"
     local tenant="${2:-default}"
     local fingerprint="$3"
+    local agent_id="${4:-}"
 
     # Build address: name@tenant.aimaestro.local
     local address="${name}@${tenant}.${AMP_PROVIDER_DOMAIN}"
@@ -656,18 +705,21 @@ save_config() {
         --arg tenant "$tenant" \
         --arg address "$address" \
         --arg fingerprint "$fingerprint" \
+        --arg agent_id "$agent_id" \
         --arg provider_domain "$AMP_PROVIDER_DOMAIN" \
         --arg maestro_url "$AMP_MAESTRO_URL" \
         --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         '{
             version: "1.1",
-            agent: {
-                name: $name,
-                tenant: $tenant,
-                address: $address,
-                fingerprint: $fingerprint,
-                createdAt: $created
-            },
+            agent: (
+                {
+                    name: $name,
+                    tenant: $tenant,
+                    address: $address,
+                    fingerprint: $fingerprint,
+                    createdAt: $created
+                } + if $agent_id != "" then {id: $agent_id} else {} end
+            ),
             provider: {
                 domain: $provider_domain,
                 maestro_url: $maestro_url
@@ -708,6 +760,41 @@ generate_keypair() {
                   $OPENSSL_BIN dgst -sha256 -binary | base64)
 
     echo "SHA256:${fingerprint}"
+}
+
+# Generate Ed25519 keypair to a specified directory (for key rotation)
+generate_keypair_to() {
+    local target_dir="$1"
+    require_openssl
+    mkdir -p "$target_dir"
+
+    local private_key="${target_dir}/private.pem"
+    local public_key="${target_dir}/public.pem"
+
+    # Generate private key
+    $OPENSSL_BIN genpkey -algorithm Ed25519 -out "${private_key}" 2>/dev/null
+    chmod 600 "${private_key}"
+
+    # Extract public key
+    $OPENSSL_BIN pkey -in "${private_key}" -pubout -out "${public_key}" 2>/dev/null
+    chmod 644 "${public_key}"
+
+    # Calculate fingerprint
+    local fingerprint
+    fingerprint=$($OPENSSL_BIN pkey -in "${private_key}" -pubout -outform DER 2>/dev/null | \
+                  $OPENSSL_BIN dgst -sha256 -binary | base64)
+
+    echo "SHA256:${fingerprint}"
+}
+
+# Generate UUIDv4 — client-generated, globally unique, no coordination needed
+generate_uuid() {
+    if command -v uuidgen &>/dev/null; then
+        uuidgen | tr '[:upper:]' '[:lower:]'
+    else
+        # Fallback: generate from /dev/urandom (works on any POSIX system)
+        od -x /dev/urandom | head -1 | awk '{print $2$3"-"$4"-4"substr($5,2)"-"substr($6,1,1)"a"substr($6,2)"-"$7$8$9}'
+    fi
 }
 
 # Get public key hex (for registration)
@@ -1308,32 +1395,39 @@ status_indicator() {
 
 # Try to detect agent name from environment
 detect_agent_name() {
-    local _name=""
-
     # 1. Check CLAUDE_AGENT_NAME env var
     if [ -n "${CLAUDE_AGENT_NAME:-}" ]; then
-        _name="$CLAUDE_AGENT_NAME"
+        echo "$CLAUDE_AGENT_NAME"
+        return 0
+    fi
+
     # 2. Check tmux session name
-    elif [ -n "${TMUX:-}" ]; then
+    if [ -n "${TMUX:-}" ]; then
         local tmux_session
         tmux_session=$(tmux display-message -p '#S' 2>/dev/null)
         if [ -n "$tmux_session" ]; then
             # Remove any _N suffix (multi-session pattern)
-            _name="${tmux_session%_[0-9]*}"
+            echo "${tmux_session%_[0-9]*}"
+            return 0
         fi
     fi
 
-    if [ -z "$_name" ]; then
-        # 3. Fallback: error out — do NOT use git repo name or hostname
-        #    Using git repo name (e.g. "agents-web") would silently poison
-        #    the agent's config with a wrong identity. Better to fail loudly.
-        echo ""
-        return 1
+    # 3. Single agent → use that name
+    local index_file="${AMP_AGENTS_BASE}/.index.json"
+    if [ -f "$index_file" ]; then
+        local count
+        count=$(jq 'length' "$index_file" 2>/dev/null || echo "0")
+        if [ "$count" = "1" ]; then
+            jq -r 'keys[0]' "$index_file" 2>/dev/null
+            return 0
+        fi
     fi
 
-    # Always normalize to lowercase — agent names are case-insensitive
-    echo "$_name" | tr '[:upper:]' '[:lower:]'
-    return 0
+    # 4. Fallback: error out — do NOT use git repo name or hostname
+    #    Using git repo name (e.g. "agents-web") would silently poison
+    #    the agent's config with a wrong identity. Better to fail loudly.
+    echo ""
+    return 1
 }
 
 # =============================================================================
@@ -1817,104 +1911,10 @@ download_attachment() {
 # =============================================================================
 
 require_init() {
-    # TODO (IMPL-03): The auto-registration logic below duplicates code in
-    # amp-send.sh:458-548. These should be consolidated into a single
-    # auto_register() function in this file.
     if ! is_initialized; then
-        # Auto-initialize: generate keys, save config, register
-        local _agent_name=""
-        if [ -n "${CLAUDE_AGENT_NAME:-}" ]; then
-            _agent_name="${CLAUDE_AGENT_NAME}"
-        elif [ -n "${TMUX:-}" ]; then
-            _agent_name=$(tmux display-message -p '#S' 2>/dev/null || true)
-            _agent_name="${_agent_name%_[0-9]*}"
-        fi
-
-        if [ -z "$_agent_name" ]; then
-            echo "Error: Cannot determine agent name for auto-init." >&2
-            echo "Set CLAUDE_AGENT_NAME or run inside a tmux session." >&2
-            exit 1
-        fi
-
-        echo "  Auto-initializing AMP identity for ${_agent_name}..." >&2
-
-        # Get organization
-        local _tenant
-        _tenant=$(get_organization 2>/dev/null) || true
-        [ -z "$_tenant" ] && _tenant="default"
-
-        # Generate keypair
-        local _fingerprint
-        _fingerprint=$(generate_keypair)
-
-        # Save config
-        save_config "$_agent_name" "$_tenant" "$_fingerprint" >/dev/null
-
-        # Create identity file
-        local _address="${_agent_name}@${_tenant}.${AMP_PROVIDER_DOMAIN}"
-        create_identity_file "$_agent_name" "$_tenant" "$_address" "$_fingerprint" >/dev/null 2>&1 || true
-
-        # Auto-register with AMP provider
-        local _pub_key=""
-        [ -f "${AMP_KEYS_DIR}/public.pem" ] && _pub_key=$(cat "${AMP_KEYS_DIR}/public.pem")
-
-        if [ -n "$_pub_key" ]; then
-            local _reg_req
-            _reg_req=$(jq -n \
-                --arg name "$_agent_name" \
-                --arg tenant "$_tenant" \
-                --arg publicKey "$_pub_key" \
-                '{ name: $name, tenant: $tenant, public_key: $publicKey, key_algorithm: "Ed25519" }')
-
-            local _reg_resp
-            _reg_resp=$(curl -s -w "\n%{http_code}" --connect-timeout 3 -X POST \
-                "${AMP_MAESTRO_URL}/api/v1/register" \
-                -H "Content-Type: application/json" \
-                -d "$_reg_req" 2>&1) || true
-
-            local _reg_http
-            _reg_http=$(echo "$_reg_resp" | tail -n1)
-            local _reg_body
-            _reg_body=$(echo "$_reg_resp" | sed '$d')
-
-            if [ "$_reg_http" = "200" ] || [ "$_reg_http" = "201" ]; then
-                local _api_key
-                _api_key=$(echo "$_reg_body" | jq -r '.api_key // empty')
-                if [ -n "$_api_key" ]; then
-                    local _prov_name
-                    _prov_name=$(echo "$_reg_body" | jq -r '.provider.name // "aimaestro.local"')
-                    local _prov_endpoint
-                    _prov_endpoint=$(echo "$_reg_body" | jq -r '.provider.endpoint // empty')
-                    local _prov_route_url
-                    _prov_route_url=$(echo "$_reg_body" | jq -r '.provider.route_url // empty')
-                    local _reg_address
-                    _reg_address=$(echo "$_reg_body" | jq -r '.address // empty')
-                    local _reg_agent_id
-                    _reg_agent_id=$(echo "$_reg_body" | jq -r '.agent_id // empty')
-
-                    jq -n \
-                        --arg provider "$_prov_name" \
-                        --arg apiUrl "${_prov_endpoint:-${AMP_MAESTRO_URL}/api/v1}" \
-                        --arg routeUrl "${_prov_route_url:-${_prov_endpoint:-${AMP_MAESTRO_URL}/api/v1}/route}" \
-                        --arg agentName "$_agent_name" \
-                        --arg tenant "$_tenant" \
-                        --arg address "${_reg_address:-$_address}" \
-                        --arg apiKey "$_api_key" \
-                        --arg providerAgentId "$_reg_agent_id" \
-                        --arg fingerprint "$_fingerprint" \
-                        --arg registeredAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-                        '{
-                            provider: $provider, apiUrl: $apiUrl, routeUrl: $routeUrl,
-                            agentName: $agentName, tenant: $tenant, address: $address,
-                            apiKey: $apiKey, providerAgentId: $providerAgentId,
-                            fingerprint: $fingerprint, registeredAt: $registeredAt
-                        }' > "${AMP_REGISTRATIONS_DIR}/${_prov_name}.json"
-                    chmod 600 "${AMP_REGISTRATIONS_DIR}/${_prov_name}.json"
-                    echo "  ✅ AMP identity registered for ${_agent_name}" >&2
-                fi
-            fi
-        fi
+        echo "Error: AMP not initialized." >&2
+        echo "Run: amp-init.sh --name <your-agent-name>" >&2
+        exit 1
     fi
-
     load_config
 }

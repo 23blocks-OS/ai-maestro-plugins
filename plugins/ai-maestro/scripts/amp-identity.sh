@@ -15,6 +15,17 @@
 
 set -e
 
+# Pre-source: extract --id to set agent identity before helper resolves it
+_amp_prev=""
+for _amp_arg in "$@"; do
+    if [ "$_amp_prev" = "--id" ]; then
+        export CLAUDE_AGENT_ID="$_amp_arg"
+        break
+    fi
+    _amp_prev="$_amp_arg"
+done
+unset _amp_prev _amp_arg
+
 # Source helper functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/amp-helper.sh"
@@ -32,13 +43,17 @@ while [[ $# -gt 0 ]]; do
             FORMAT="brief"
             shift
             ;;
+        --id)
+            shift 2  # Already handled in pre-source parsing
+            ;;
         --help|-h)
-            echo "Usage: amp-identity [options]"
+            echo "Usage: amp-identity [--id UUID] [options]"
             echo ""
             echo "Check and display your AMP identity."
             echo "Run this FIRST to recover your identity after context reset."
             echo ""
             echo "Options:"
+            echo "  --id UUID      Operate as this agent (UUID from config.json)"
             echo "  --json, -j     Output as JSON"
             echo "  --brief, -b    One-line summary"
             echo "  --help, -h     Show this help"

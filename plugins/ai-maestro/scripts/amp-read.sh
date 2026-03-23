@@ -13,6 +13,17 @@
 
 set -e
 
+# Pre-source: extract --id to set agent identity before helper resolves it
+_amp_prev=""
+for _amp_arg in "$@"; do
+    if [ "$_amp_prev" = "--id" ]; then
+        export CLAUDE_AGENT_ID="$_amp_arg"
+        break
+    fi
+    _amp_prev="$_amp_arg"
+done
+unset _amp_prev _amp_arg
+
 # Source helper functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/amp-helper.sh"
@@ -42,8 +53,11 @@ while [[ $# -gt 0 ]]; do
             AUTO_DOWNLOAD=true
             shift
             ;;
+        --id)
+            shift 2  # Already handled in pre-source parsing
+            ;;
         --help|-h)
-            echo "Usage: amp-read <message-id> [options]"
+            echo "Usage: amp-read [--id UUID] <message-id> [options]"
             echo ""
             echo "Read a specific message."
             echo ""
@@ -51,6 +65,7 @@ while [[ $# -gt 0 ]]; do
             echo "  message-id      The message ID (from amp-inbox)"
             echo ""
             echo "Options:"
+            echo "  --id UUID            Operate as this agent (UUID from config.json)"
             echo "  --no-mark-read, -n   Don't mark the message as read"
             echo "  --json, -j           Output raw JSON"
             echo "  --sent, -s           Read from sent folder instead of inbox"

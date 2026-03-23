@@ -18,6 +18,17 @@
 
 set -e
 
+# Pre-source: extract --id to set agent identity before helper resolves it
+_amp_prev=""
+for _amp_arg in "$@"; do
+    if [ "$_amp_prev" = "--id" ]; then
+        export CLAUDE_AGENT_ID="$_amp_arg"
+        break
+    fi
+    _amp_prev="$_amp_arg"
+done
+unset _amp_prev _amp_arg
+
 # Source helper functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/amp-helper.sh"
@@ -42,6 +53,7 @@ show_help() {
     echo "  --all             Download all attachments from the message"
     echo "  --dest, -d DIR    Destination directory (default: ~/.agent-messaging/attachments/<msg-id>/)"
     echo "  --sent, -s        Download from sent folder instead of inbox"
+    echo "  --id UUID         Operate as this agent (UUID from config.json)"
     echo "  --help, -h        Show this help"
     echo ""
     echo "Examples:"
@@ -64,6 +76,9 @@ while [[ $# -gt 0 ]]; do
         --sent|-s)
             BOX="sent"
             shift
+            ;;
+        --id)
+            shift 2  # Already handled in pre-source parsing
             ;;
         --help|-h)
             show_help

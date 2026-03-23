@@ -17,6 +17,17 @@
 
 set -e
 
+# Pre-source: extract --id to set agent identity before helper resolves it
+_amp_prev=""
+for _amp_arg in "$@"; do
+    if [ "$_amp_prev" = "--id" ]; then
+        export CLAUDE_AGENT_ID="$_amp_arg"
+        break
+    fi
+    _amp_prev="$_amp_arg"
+done
+unset _amp_prev _amp_arg
+
 # Source helper functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/amp-helper.sh"
@@ -64,6 +75,7 @@ show_help() {
     echo "  --name, -n NAME           Agent name (default: from local config)"
     echo "  --api-url, -a URL         Custom API URL (for self-hosted providers)"
     echo "  --force, -f               Re-register even if already registered"
+    echo "  --id UUID                 Operate as this agent (UUID from config.json)"
     echo "  --help, -h                Show this help"
     echo ""
     echo "Supported providers:"
@@ -105,6 +117,9 @@ while [[ $# -gt 0 ]]; do
         --force|-f)
             FORCE=true
             shift
+            ;;
+        --id)
+            shift 2  # Already handled in pre-source parsing
             ;;
         --help|-h)
             show_help

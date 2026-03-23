@@ -1,9 +1,13 @@
 #!/bin/bash
 # =============================================================================
-# AMP Fetch - Fetch Messages from External Providers
+# AMP Fetch - Fetch Messages from Providers
 # =============================================================================
 #
-# Pull new messages from registered external providers.
+# Pull new messages from registered providers using the standard AMP API:
+#   GET  /messages/pending       — fetch pending messages
+#   DELETE /messages/pending/:id — acknowledge receipt
+#
+# All providers use the same endpoints. No provider-specific logic.
 #
 # Usage:
 #   amp-fetch                    # Fetch from all providers
@@ -12,6 +16,17 @@
 # =============================================================================
 
 set -e
+
+# Pre-source: extract --id to set agent identity before helper resolves it
+_amp_prev=""
+for _amp_arg in "$@"; do
+    if [ "$_amp_prev" = "--id" ]; then
+        export CLAUDE_AGENT_ID="$_amp_arg"
+        break
+    fi
+    _amp_prev="$_amp_arg"
+done
+unset _amp_prev _amp_arg
 
 # Source helper functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,12 +40,13 @@ MARK_AS_FETCHED=true
 show_help() {
     echo "Usage: amp-fetch [options]"
     echo ""
-    echo "Fetch new messages from external providers."
+    echo "Fetch new messages from registered providers."
     echo ""
     echo "Options:"
     echo "  --provider, -p PROVIDER   Fetch from specific provider only"
     echo "  --verbose, -v             Show detailed output"
     echo "  --no-mark                 Don't mark messages as fetched on provider"
+    echo "  --id UUID                 Operate as this agent (UUID from config.json)"
     echo "  --help, -h                Show this help"
     echo ""
     echo "Examples:"
@@ -52,6 +68,9 @@ while [[ $# -gt 0 ]]; do
         --no-mark)
             MARK_AS_FETCHED=false
             shift
+            ;;
+        --id)
+            shift 2  # Already handled in pre-source parsing
             ;;
         --help|-h)
             show_help
@@ -93,7 +112,7 @@ else
 fi
 
 if [ ${#PROVIDERS[@]} -eq 0 ]; then
-    echo "No external providers registered."
+    echo "No providers registered."
     echo ""
     echo "Register with a provider first:"
     echo "  amp-register --provider crabmail.ai --tenant <your-tenant>"
@@ -111,18 +130,18 @@ for provider in "${PROVIDERS[@]}"; do
     API_KEY=$(echo "$REGISTRATION" | jq -r '.apiKey')
     EXTERNAL_ADDRESS=$(echo "$REGISTRATION" | jq -r '.address')
 
+    # Use explicit fetchUrl from registration if available, otherwise derive from apiUrl
+    # All providers use the same AMP standard: GET /messages/pending
+    FETCH_ENDPOINT=$(echo "$REGISTRATION" | jq -r '.fetchUrl // empty')
+    if [ -z "$FETCH_ENDPOINT" ]; then
+        FETCH_ENDPOINT="${API_URL}/messages/pending"
+    fi
+
     if [ "$VERBOSE" = true ]; then
         echo "Fetching from ${provider}..."
         echo "  API: ${API_URL}"
+        echo "  Fetch: ${FETCH_ENDPOINT}"
         echo "  Address: ${EXTERNAL_ADDRESS}"
-    fi
-
-    # Determine fetch endpoint based on provider type
-    # AI Maestro local providers use /messages/pending (API_URL already includes /api/v1)
-    # External providers (e.g., Crabmail) use /v1/inbox
-    FETCH_ENDPOINT="${API_URL}/v1/inbox"
-    if [ "$provider" = "aimaestro.local" ] || [ "$provider" = "${AMP_PROVIDER_DOMAIN}" ]; then
-        FETCH_ENDPOINT="${API_URL}/messages/pending"
     fi
 
     # Fetch messages from provider
@@ -171,26 +190,35 @@ for provider in "${PROVIDERS[@]}"; do
             fi
 
             # Signature verification for fetched messages
-            # - AI Maestro providers: server already verified on ingest, trust it
-            # - External providers: verify if we have the sender's public key
+            # If the message has a valid signature, verify it locally when possible.
+            # Messages from the same provider are trusted (provider verified at route time).
             signature=$(echo "$msg" | jq -r '.envelope.signature // empty')
             sig_valid="false"
 
-            if [ "$provider" = "aimaestro.local" ] || [ "$provider" = "${AMP_PROVIDER_DOMAIN}" ]; then
-                # AI Maestro verified signatures at route time — trust the relay
+            # Check if message was relayed through the same provider we registered with
+            # (provider already verified the signature at route/ingest time)
+            msg_from=$(echo "$msg" | jq -r '.envelope.from // empty')
+            msg_from_provider=""
+            if [[ "$msg_from" == *"@"* ]]; then
+                # Extract provider from address: name@tenant.provider → provider part
+                msg_from_after_at="${msg_from#*@}"
+                # If it has a dot, the provider is everything after the first dot
+                if [[ "$msg_from_after_at" == *.* ]]; then
+                    msg_from_provider="${msg_from_after_at#*.}"
+                fi
+            fi
+
+            # Trust messages relayed through our registered provider
+            if [ "$msg_from_provider" = "$provider" ] || \
+               [[ "$provider" == *".$msg_from_provider" ]] || \
+               [[ "$msg_from_provider" == *".$provider" ]]; then
                 sig_valid="true"
             elif [ -n "$signature" ]; then
-                # External provider: attempt local verification if sender's public
-                # key is cached (e.g. from a previous registration exchange).
-                # Without the sender's key, we mark it as unverified but still accept.
+                # Different provider or unknown: attempt local verification
                 sender_addr=$(echo "$msg" | jq -r '.envelope.from // empty')
-                sender_name=$(echo "${sender_addr%%@*}" | tr '[:upper:]' '[:lower:]')
+                sender_name="${sender_addr%%@*}"
                 # Look up sender UUID from .index.json for key resolution
-                _sender_uuid=""
-                _amp_index="${AMP_AGENTS_BASE}/.index.json"
-                if [ -f "$_amp_index" ]; then
-                    _sender_uuid=$(jq -r --arg name "$sender_name" '.[$name] // empty' "$_amp_index" 2>/dev/null)
-                fi
+                _sender_uuid=$(_index_lookup "$sender_name" 2>/dev/null) || true
                 if [ -n "$_sender_uuid" ]; then
                     sender_pubkey="${AMP_AGENTS_BASE}/${_sender_uuid}/keys/public.pem"
                 else
@@ -270,21 +298,12 @@ for provider in "${PROVIDERS[@]}"; do
 
             TOTAL_NEW=$((TOTAL_NEW + 1))
 
-            # Mark as fetched on provider (if enabled)
+            # Acknowledge receipt on provider (AMP standard: DELETE /messages/pending/:id)
             if [ "$MARK_AS_FETCHED" = true ]; then
-                # AI Maestro uses DELETE /messages/pending?id=X
-                # External providers use POST /v1/inbox/<id>/ack
-                if [ "$provider" = "aimaestro.local" ] || [ "$provider" = "${AMP_PROVIDER_DOMAIN}" ]; then
-                    curl -s --connect-timeout 3 -G -X DELETE "${API_URL}/messages/pending" \
-                        --data-urlencode "id=${msg_id}" \
-                        -H "Authorization: Bearer ${API_KEY}" \
-                        >/dev/null 2>&1 || true
-                else
-                    # msg_id is validated to [a-zA-Z0-9_-] so safe in path segment
-                    curl -s --connect-timeout 3 -X POST "${API_URL}/v1/inbox/${msg_id}/ack" \
-                        -H "Authorization: Bearer ${API_KEY}" \
-                        >/dev/null 2>&1 || true
-                fi
+                # msg_id is validated to [a-zA-Z0-9_-] so safe in path segment
+                curl -s --connect-timeout 3 -X DELETE "${API_URL}/messages/pending/${msg_id}" \
+                    -H "Authorization: Bearer ${API_KEY}" \
+                    >/dev/null 2>&1 || true
             fi
         done < <(echo "$BODY" | jq -c '.messages[]' 2>/dev/null)
 

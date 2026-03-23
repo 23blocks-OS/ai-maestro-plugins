@@ -17,6 +17,17 @@
 
 set -e
 
+# Pre-source: extract --id to set agent identity before helper resolves it
+_amp_prev=""
+for _amp_arg in "$@"; do
+    if [ "$_amp_prev" = "--id" ]; then
+        export CLAUDE_AGENT_ID="$_amp_arg"
+        break
+    fi
+    _amp_prev="$_amp_arg"
+done
+unset _amp_prev _amp_arg
+
 # Source helper functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/amp-helper.sh"
@@ -50,6 +61,7 @@ show_help() {
     echo "  --attach, -a FILE         Attach a file (repeatable, max ${AMP_MAX_ATTACHMENTS} files,"
     echo "                              max $(format_file_size "$AMP_MAX_ATTACHMENT_SIZE")/file,"
     echo "                              max $(format_file_size "$AMP_MAX_TOTAL_ATTACHMENT_SIZE") total)"
+    echo "  --id UUID                 Operate as this agent (UUID from config.json)"
     echo "  --help, -h                Show this help"
     echo ""
     echo "Address formats:"
@@ -90,6 +102,9 @@ while [[ $# -gt 0 ]]; do
         --attach|-a)
             ATTACH_FILES+=("$2")
             shift 2
+            ;;
+        --id)
+            shift 2  # Already handled in pre-source parsing
             ;;
         --help|-h)
             show_help
@@ -208,11 +223,11 @@ if [ ${#ATTACH_FILES[@]} -gt 0 ]; then
     UPLOAD_API_URL=""
     UPLOAD_API_KEY=""
 
-    # Try AI Maestro registration first
+    # Try local provider registration first (any .local domain)
     for provider_file in "${AMP_REGISTRATIONS_DIR}"/*.json; do
         [ -f "$provider_file" ] || continue
         prov=$(jq -r '.provider // empty' "$provider_file" 2>/dev/null)
-        if [ "$prov" = "aimaestro.local" ] || [ "$prov" = "${AMP_PROVIDER_DOMAIN}" ]; then
+        if [[ "$prov" == *.local ]]; then
             UPLOAD_API_URL=$(jq -r '.apiUrl // empty' "$provider_file" 2>/dev/null)
             UPLOAD_API_KEY=$(jq -r '.apiKey // empty' "$provider_file" 2>/dev/null)
             break
@@ -416,51 +431,99 @@ send_via_api() {
 }
 
 # =============================================================================
-# Helper: Check if a registration file is for the local AI Maestro provider
+# Helper: Check if a registration is for a local provider (any .local domain)
 # =============================================================================
-is_aimaestro_registration() {
+is_local_provider_registration() {
     local provider_name="$1"
-    # Exact match on known AI Maestro provider names
-    [ "$provider_name" = "aimaestro.local" ] || \
-    [ "$provider_name" = "${AMP_PROVIDER_DOMAIN}" ]
+    [[ "$provider_name" == *.local ]]
 }
 
 # =============================================================================
 # Routing Decision
 # =============================================================================
-# For "local" routes, check if we're registered with AI Maestro provider.
+# For "local" routes, check if we're registered with a local provider.
 # If so, use the API for proper mesh routing; otherwise, fall back to filesystem.
 
 if [ "$ROUTE" = "local" ]; then
-    # Try to find AI Maestro registration
-    AI_MAESTRO_REG=""
+    # Try to find a local provider registration
+    LOCAL_PROVIDER_REG=""
     for provider_file in "${AMP_REGISTRATIONS_DIR}"/*.json; do
         [ -f "$provider_file" ] || continue
         provider=$(jq -r '.provider // empty' "$provider_file" 2>/dev/null)
-        if is_aimaestro_registration "$provider"; then
-            AI_MAESTRO_REG="$provider_file"
+        if is_local_provider_registration "$provider"; then
+            LOCAL_PROVIDER_REG="$provider_file"
             break
         fi
     done
 
-    if [ -n "$AI_MAESTRO_REG" ] && [ -f "$AI_MAESTRO_REG" ]; then
+    if [ -n "$LOCAL_PROVIDER_REG" ] && [ -f "$LOCAL_PROVIDER_REG" ]; then
         # ==========================================================================
-        # AI Maestro Provider Delivery (mesh routing)
+        # Local Provider Delivery
         # ==========================================================================
-        REGISTRATION=$(cat "$AI_MAESTRO_REG")
-        API_URL=$(echo "$REGISTRATION" | jq -r '.apiUrl')
-        API_KEY=$(echo "$REGISTRATION" | jq -r '.apiKey')
-        ROUTE_URL=$(echo "$REGISTRATION" | jq -r '.routeUrl // empty')
+        # Priority: filesystem delivery if recipient is on this machine,
+        # otherwise use the provider API for cross-host mesh routing.
 
         parse_address "$RECIPIENT"
         FULL_RECIPIENT=$(build_address "$ADDR_NAME" "$ADDR_TENANT" "$ADDR_PROVIDER")
 
-        SEND_URL="${ROUTE_URL:-${API_URL}/route}"
-        send_via_api "$SEND_URL" "$API_KEY" "$FULL_RECIPIENT" "AMP routing" || exit 1
+        # Check if recipient exists on this filesystem first
+        AGENTS_BASE_DIR="${HOME}/.agent-messaging/agents"
+        RECIPIENT_UUID=$(_index_lookup "$ADDR_NAME" 2>/dev/null) || true
+        if [ -n "$RECIPIENT_UUID" ]; then
+            RECIPIENT_AMP_DIR="${AGENTS_BASE_DIR}/${RECIPIENT_UUID}"
+        else
+            RECIPIENT_AMP_DIR="${AGENTS_BASE_DIR}/${ADDR_NAME}"
+        fi
+
+        if [ -d "${RECIPIENT_AMP_DIR}" ]; then
+            # Recipient IS on this machine — deliver directly via filesystem
+            save_to_sent "$MESSAGE_JSON" >/dev/null
+            MSG_ID=$(echo "$MESSAGE_JSON" | jq -r '.envelope.id')
+
+            RECIPIENT_INBOX="${RECIPIENT_AMP_DIR}/messages/inbox"
+            FROM_ADDR=$(echo "$MESSAGE_JSON" | jq -r '.envelope.from')
+            SENDER_DIR=$(sanitize_address_for_path "$FROM_ADDR")
+            mkdir -p "${RECIPIENT_INBOX}/${SENDER_DIR}"
+
+            # Strip local_path from attachments before delivery
+            DELIVERY_MSG=$(echo "$MESSAGE_JSON" | jq \
+                --arg received "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                '.local = (.local // {}) + {received_at: $received, status: "unread"} |
+                 .payload.attachments = [(.payload.attachments // [])[] | del(.local_path)]')
+
+            # Apply content security (injection detection + wrapping) before writing
+            if type apply_content_security &>/dev/null; then
+                DELIVERY_MSG=$(apply_content_security "$DELIVERY_MSG" "${AMP_TENANT:-default}" "true")
+            fi
+
+            echo "$DELIVERY_MSG" > "${RECIPIENT_INBOX}/${SENDER_DIR}/${MSG_ID}.json"
+
+            echo "✅ Message sent (local filesystem delivery)"
+            echo ""
+            echo "  To:       ${FULL_RECIPIENT}"
+            echo "  Subject:  ${SUBJECT}"
+            echo "  Priority: ${PRIORITY}"
+            echo "  Type:     ${TYPE}"
+            echo "  ID:       ${MSG_ID}"
+
+            local_att_count=$(echo "$ATTACHMENTS_JSON" | jq 'length' 2>/dev/null || echo "0")
+            if [ "$local_att_count" -gt 0 ]; then
+                echo "  Attach:   ${local_att_count} file(s)"
+            fi
+        else
+            # Recipient NOT on this machine — use provider API for cross-host routing
+            REGISTRATION=$(cat "$LOCAL_PROVIDER_REG")
+            API_URL=$(echo "$REGISTRATION" | jq -r '.apiUrl')
+            API_KEY=$(echo "$REGISTRATION" | jq -r '.apiKey')
+            ROUTE_URL=$(echo "$REGISTRATION" | jq -r '.routeUrl // empty')
+
+            SEND_URL="${ROUTE_URL:-${API_URL}/route}"
+            send_via_api "$SEND_URL" "$API_KEY" "$FULL_RECIPIENT" "AMP routing" || exit 1
+        fi
 
     else
         # ==========================================================================
-        # No AI Maestro registration found — attempt auto-registration
+        # No local provider registration found — attempt auto-registration
         # ==========================================================================
         echo "  No AMP registration found. Auto-registering..."
 
@@ -558,11 +621,7 @@ if [ "$ROUTE" = "local" ]; then
 
             AGENTS_BASE_DIR="${HOME}/.agent-messaging/agents"
             # Look up recipient UUID from .index.json
-            AMP_INDEX_FILE="${AGENTS_BASE_DIR}/.index.json"
-            RECIPIENT_UUID=""
-            if [ -f "$AMP_INDEX_FILE" ]; then
-                RECIPIENT_UUID=$(jq -r --arg name "$ADDR_NAME" '.[$name] // empty' "$AMP_INDEX_FILE" 2>/dev/null)
-            fi
+            RECIPIENT_UUID=$(_index_lookup "$ADDR_NAME" 2>/dev/null) || true
             if [ -n "$RECIPIENT_UUID" ]; then
                 RECIPIENT_AMP_DIR="${AGENTS_BASE_DIR}/${RECIPIENT_UUID}"
             else
