@@ -3,7 +3,7 @@
 # AID Status - Agent Identity Status
 # =============================================================================
 #
-# Show registered auth servers, cached tokens, and AMP identity info.
+# Show registered auth servers, cached tokens, and agent identity info.
 #
 # Usage:
 #   aid-status              # Human-readable output
@@ -13,9 +13,9 @@
 
 set -e
 
-# Source AMP helper for identity
+# Source AID helper for identity
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/amp-helper.sh"
+source "${SCRIPT_DIR}/aid-helper.sh"
 
 FORMAT="text"
 
@@ -47,7 +47,7 @@ done
 # =============================================================================
 
 if ! is_initialized; then
-    echo "Error: AMP identity not initialized. Run: amp-init --auto" >&2
+    echo "Error: Agent identity not initialized. Run: aid-init --auto" >&2
     exit 1
 fi
 
@@ -76,7 +76,7 @@ if [ -d "$AID_CACHE_DIR" ]; then
     for token_file in "$AID_CACHE_DIR"/*.json; do
         [ -f "$token_file" ] || continue
         expires_at=$(jq -r '.expires_at // 0' "$token_file" 2>/dev/null)
-        auth_server=$(jq -r '.auth_server // .gateway // "?"' "$token_file" 2>/dev/null)
+        auth_server=$(jq -r '.auth_server // "?"' "$token_file" 2>/dev/null)
         scope=$(jq -r '.scope // ""' "$token_file" 2>/dev/null)
 
         if [ "$expires_at" -gt "$NOW" ] 2>/dev/null; then
@@ -121,7 +121,7 @@ else
 
     echo "  Auth Server Registrations: ${REG_COUNT}"
     if [ "$REG_COUNT" -gt 0 ]; then
-        echo "$REGISTRATIONS" | jq -r '.[] | "    - \(.auth_server // .gateway) (role: \(.role_id), status: \(.status))"'
+        echo "$REGISTRATIONS" | jq -r '.[] | "    - \(.auth_server) (role: \(.role_id), status: \(.status))"'
     else
         echo "    (none — run: aid-register --auth <url> --token <jwt> --role-id <id>)"
     fi

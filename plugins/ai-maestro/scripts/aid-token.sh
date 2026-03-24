@@ -3,7 +3,7 @@
 # AID Token - Agent Identity
 # =============================================================================
 #
-# Request an API token from a 23blocks Auth server using AMP identity.
+# Request an API token from a 23blocks Auth server using Agent Identity.
 # The agent presents its Agent Identity + proof of possession and receives
 # an RS256 JWT that works with any 23blocks API (or any JWT-validating API).
 #
@@ -13,16 +13,16 @@
 #   aid-token --auth https://auth.23blocks.com/acme --json
 #
 # Prerequisites:
-#   - AMP identity initialized (amp-init --auto)
+#   - Agent identity initialized (aid-init --auto)
 #   - Agent registered with the auth server (aid-register)
 #
 # =============================================================================
 
 set -e
 
-# Source AMP helper for identity, keys, and signing
+# Source AID helper for identity, keys, and signing
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/amp-helper.sh"
+source "${SCRIPT_DIR}/aid-helper.sh"
 
 # =============================================================================
 # Arguments
@@ -37,7 +37,7 @@ QUIET=false
 show_help() {
     echo "Usage: aid-token --auth <url> [options]"
     echo ""
-    echo "Request an API token from a 23blocks Auth server using AMP identity."
+    echo "Request an API token from a 23blocks Auth server using Agent Identity."
     echo ""
     echo "Required:"
     echo "  --auth, -a URL          Auth server URL (e.g., https://auth.23blocks.com/acme)"
@@ -102,12 +102,12 @@ if [ -z "$AUTH_URL" ]; then
 fi
 
 # =============================================================================
-# Load AMP Identity
+# Load Agent Identity
 # =============================================================================
 
 if ! is_initialized; then
-    echo "Error: AMP identity not initialized." >&2
-    echo "Run: amp-init --auto" >&2
+    echo "Error: Agent identity not initialized." >&2
+    echo "Run: aid-init --auto" >&2
     exit 1
 fi
 
@@ -118,7 +118,7 @@ PRIVATE_KEY="${AMP_KEYS_DIR}/private.pem"
 PUBLIC_KEY="${AMP_KEYS_DIR}/public.pem"
 
 if [ ! -f "$PRIVATE_KEY" ] || [ ! -f "$PUBLIC_KEY" ]; then
-    echo "Error: AMP keys not found at ${AMP_KEYS_DIR}/" >&2
+    echo "Error: Agent keys not found at ${AMP_KEYS_DIR}/" >&2
     exit 1
 fi
 
@@ -354,7 +354,7 @@ else
         case "$ERROR" in
             invalid_grant)
                 echo "  → Agent Identity signature may be invalid or expired." >&2
-                echo "    Check that your AMP keys match the registration." >&2
+                echo "    Check that your agent keys match the registration." >&2
                 ;;
             invalid_proof)
                 echo "  → Proof of possession failed. Check system clock sync." >&2

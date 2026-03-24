@@ -3,7 +3,7 @@
 # AID Register - Agent Identity Registration
 # =============================================================================
 #
-# Register this agent's AMP identity with a 23blocks Auth server for API access.
+# Register this agent's identity with a 23blocks Auth server for API access.
 # This is a one-time setup that links the agent's Ed25519 identity to a
 # company tenant with a specific role and permissions.
 #
@@ -12,16 +12,16 @@
 #   aid-register --auth https://auth.23blocks.com/acme --token <admin_jwt> --role-id 2 --api-key pk_live_xxx
 #
 # Prerequisites:
-#   - AMP identity initialized (amp-init --auto)
+#   - Agent identity initialized (aid-init --auto)
 #   - Admin JWT token for the target auth server
 #
 # =============================================================================
 
 set -e
 
-# Source AMP helper for identity, keys, and signing
+# Source AID helper for identity, keys, and signing
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/amp-helper.sh"
+source "${SCRIPT_DIR}/aid-helper.sh"
 
 # =============================================================================
 # Arguments
@@ -48,7 +48,7 @@ show_help() {
     echo ""
     echo "Options:"
     echo "  --api-key, -k KEY       API key (X-Api-Key header)"
-    echo "  --name, -n NAME         Display name (default: AMP agent name)"
+    echo "  --name, -n NAME         Display name (default: agent name)"
     echo "  --description, -d DESC  Agent description"
     echo "  --lifetime, -l SECS     Token lifetime in seconds (default: 3600)"
     echo "  --help, -h              Show this help"
@@ -125,12 +125,12 @@ if [ -z "$ROLE_ID" ]; then
 fi
 
 # =============================================================================
-# Load AMP Identity
+# Load Agent Identity
 # =============================================================================
 
 if ! is_initialized; then
-    echo "Error: AMP identity not initialized." >&2
-    echo "Run: amp-init --auto" >&2
+    echo "Error: Agent identity not initialized." >&2
+    echo "Run: aid-init --auto" >&2
     exit 1
 fi
 
@@ -139,7 +139,7 @@ load_config
 PUBLIC_KEY="${AMP_KEYS_DIR}/public.pem"
 
 if [ ! -f "$PUBLIC_KEY" ]; then
-    echo "Error: AMP public key not found at ${PUBLIC_KEY}" >&2
+    echo "Error: Public key not found at ${PUBLIC_KEY}" >&2
     exit 1
 fi
 
