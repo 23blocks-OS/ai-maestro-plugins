@@ -32,6 +32,17 @@
         "skills/agent-messaging": "skills/agent-messaging",
         "scripts/*.sh": "scripts/"
       }
+    },
+    {
+      "name": "agent-identity",
+      "description": "Agent Identity (AID) — OAuth 2.0 authentication using AMP Ed25519 identity",
+      "type": "git",
+      "repo": "https://github.com/agentmessaging/agent-identity.git",
+      "ref": "main",
+      "map": {
+        "skills/agent-identity": "skills/agent-identity",
+        "scripts/*.sh": "scripts/"
+      }
     }
   ]
 }
