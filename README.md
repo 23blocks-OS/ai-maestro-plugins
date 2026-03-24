@@ -12,14 +12,17 @@ You pick the skills. You pick the scripts. You build a custom plugin. You instal
 
 A skill is a capability you load into your agent. Out of the box, AI Maestro comes with:
 
-| Skill | What your agent can do |
-|-------|----------------------|
-| **Agent Messaging** | Send and receive messages to other agents |
-| **Agent Management** | Create, rename, hibernate, wake up other agents |
-| **Memory Search** | Search through past conversations and remember context |
-| **Code Graph** | Understand how your codebase is connected |
-| **Docs Search** | Search auto-generated documentation |
-| **Planning** | Break down complex tasks and track progress |
+| Skill | What your agent can do | Source |
+|-------|----------------------|--------|
+| **Agent Messaging** | Send and receive messages to other agents | [agentmessaging/claude-plugin](https://github.com/agentmessaging/claude-plugin) |
+| **Agent Identity** | Passwordless OAuth 2.0 auth using Ed25519 keys | [agentmessaging/agent-identity](https://github.com/agentmessaging/agent-identity) |
+| **Agent Management** | Create, rename, hibernate, wake up other agents | Local (`src/`) |
+| **Memory Search** | Search through past conversations and remember context | Local (`src/`) |
+| **Code Graph** | Understand how your codebase is connected | Local (`src/`) |
+| **Docs Search** | Search auto-generated documentation | Local (`src/`) |
+| **Planning** | Break down complex tasks and track progress | Local (`src/`) |
+
+The **Source** column tells you where each skill lives. `Local` means it's in this repo's `src/` folder. Linked skills are pulled from external repos during build.
 
 But here's the thing — **you're not stuck with this list.**
 
