@@ -1,0 +1,198 @@
+{
+  "name": "ai-maestro-full",
+  "version": "1.0.0",
+  "description": "Complete AI agent setup — 150+ personalities, 7 skills, messaging, identity",
+  "output": "./plugins/ai-maestro",
+  "plugin": {
+    "name": "ai-maestro",
+    "version": "1.0.0",
+    "author": { "name": "23blocks" },
+    "homepage": "https://github.com/23blocks-OS/ai-maestro",
+    "license": "MIT"
+  },
+  "sources": [
+    {
+      "name": "core",
+      "description": "AI Maestro core skills, scripts, and hooks",
+      "type": "local",
+      "path": "./src",
+      "map": {
+        "skills/*": "skills/",
+        "scripts/*": "scripts/",
+        "hooks/*": "hooks/"
+      }
+    },
+    {
+      "name": "amp-messaging",
+      "description": "Agent Messaging Protocol (AMP) — email for AI agents",
+      "type": "git",
+      "repo": "https://github.com/agentmessaging/claude-plugin.git",
+      "ref": "main",
+      "map": {
+        "skills/agent-messaging": "skills/agent-messaging",
+        "scripts/*.sh": "scripts/"
+      }
+    },
+    {
+      "name": "agent-identity",
+      "description": "Agent Identity (AID) — OAuth 2.0 authentication using AMP Ed25519 identity",
+      "type": "git",
+      "repo": "https://github.com/agentmessaging/agent-identity.git",
+      "ref": "main",
+      "map": {
+        "skills/agent-identity": "skills/agent-identity",
+        "scripts/*.sh": "scripts/"
+      }
+    },
+    {
+      "name": "agency-agents-engineering",
+      "description": "Engineering division — frontend, backend, DevOps, infrastructure, security agents",
+      "type": "git",
+      "repo": "https://github.com/msitarzewski/agency-agents.git",
+      "ref": "main",
+      "map": {
+        "engineering/*.md": "personalities/engineering/"
+      }
+    },
+    {
+      "name": "agency-agents-design",
+      "description": "Design division — UI, UX, brand, motion, accessibility agents",
+      "type": "git",
+      "repo": "https://github.com/msitarzewski/agency-agents.git",
+      "ref": "main",
+      "map": {
+        "design/*.md": "personalities/design/"
+      }
+    },
+    {
+      "name": "agency-agents-marketing",
+      "description": "Marketing division — growth, content, SEO, social media, email agents",
+      "type": "git",
+      "repo": "https://github.com/msitarzewski/agency-agents.git",
+      "ref": "main",
+      "map": {
+        "marketing/*.md": "personalities/marketing/"
+      }
+    },
+    {
+      "name": "agency-agents-product",
+      "description": "Product division — product manager, analyst, strategist agents",
+      "type": "git",
+      "repo": "https://github.com/msitarzewski/agency-agents.git",
+      "ref": "main",
+      "map": {
+        "product/*.md": "personalities/product/"
+      }
+    },
+    {
+      "name": "agency-agents-finance",
+      "description": "Finance division — financial analyst, accountant, pricing agents",
+      "type": "git",
+      "repo": "https://github.com/msitarzewski/agency-agents.git",
+      "ref": "main",
+      "map": {
+        "finance/*.md": "personalities/finance/"
+      }
+    },
+    {
+      "name": "agency-agents-strategy",
+      "description": "Strategy division — business strategist, competitive analyst agents",
+      "type": "git",
+      "repo": "https://github.com/msitarzewski/agency-agents.git",
+      "ref": "main",
+      "map": {
+        "strategy/*.md": "personalities/strategy/"
+      }
+    },
+    {
+      "name": "agency-agents-sales",
+      "description": "Sales division — sales development, account executive agents",
+      "type": "git",
+      "repo": "https://github.com/msitarzewski/agency-agents.git",
+      "ref": "main",
+      "map": {
+        "sales/*.md": "personalities/sales/"
+      }
+    },
+    {
+      "name": "agency-agents-support",
+      "description": "Support division — customer support, technical support agents",
+      "type": "git",
+      "repo": "https://github.com/msitarzewski/agency-agents.git",
+      "ref": "main",
+      "map": {
+        "support/*.md": "personalities/support/"
+      }
+    },
+    {
+      "name": "agency-agents-testing",
+      "description": "Testing division — QA, automation, performance testing agents",
+      "type": "git",
+      "repo": "https://github.com/msitarzewski/agency-agents.git",
+      "ref": "main",
+      "map": {
+        "testing/*.md": "personalities/testing/"
+      }
+    },
+    {
+      "name": "agency-agents-project-management",
+      "description": "Project management division — project manager, scrum master agents",
+      "type": "git",
+      "repo": "https://github.com/msitarzewski/agency-agents.git",
+      "ref": "main",
+      "map": {
+        "project-management/*.md": "personalities/project-management/"
+      }
+    },
+    {
+      "name": "agency-agents-academic",
+      "description": "Academic division — research, writing, data analysis agents",
+      "type": "git",
+      "repo": "https://github.com/msitarzewski/agency-agents.git",
+      "ref": "main",
+      "map": {
+        "academic/*.md": "personalities/academic/"
+      }
+    },
+    {
+      "name": "agency-agents-game-development",
+      "description": "Game development division — game designer, unity developer agents",
+      "type": "git",
+      "repo": "https://github.com/msitarzewski/agency-agents.git",
+      "ref": "main",
+      "map": {
+        "game-development/*.md": "personalities/game-development/"
+      }
+    },
+    {
+      "name": "agency-agents-paid-media",
+      "description": "Paid media division — PPC, social ads, programmatic agents",
+      "type": "git",
+      "repo": "https://github.com/msitarzewski/agency-agents.git",
+      "ref": "main",
+      "map": {
+        "paid-media/*.md": "personalities/paid-media/"
+      }
+    },
+    {
+      "name": "agency-agents-spatial-computing",
+      "description": "Spatial computing division — AR/VR, 3D, spatial UI agents",
+      "type": "git",
+      "repo": "https://github.com/msitarzewski/agency-agents.git",
+      "ref": "main",
+      "map": {
+        "spatial-computing/*.md": "personalities/spatial-computing/"
+      }
+    },
+    {
+      "name": "agency-agents-specialized",
+      "description": "Specialized division — niche and cross-domain specialist agents",
+      "type": "git",
+      "repo": "https://github.com/msitarzewski/agency-agents.git",
+      "ref": "main",
+      "map": {
+        "specialized/*.md": "personalities/specialized/"
+      }
+    }
+  ]
+}

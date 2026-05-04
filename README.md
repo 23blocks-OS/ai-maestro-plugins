@@ -24,6 +24,8 @@ A skill is a capability you load into your agent. Out of the box, AI Maestro com
 
 The **Source** column tells you where each skill lives. `Local` means it's in this repo's `src/` folder. Linked skills are pulled from external repos during build.
 
+These are the tools your agent uses — the **HOW**. For *who* your agent **IS**, see [The Agent Library](https://github.com/msitarzewski/agency-agents) — 150+ specialist personalities ready to combine with these skills.
+
 But here's the thing — **you're not stuck with this list.**
 
 ## The Idea
@@ -107,6 +109,40 @@ Same builder. Different agents. Different superpowers.
 - macOS or Linux
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI
 - Bash 4.0+, git, jq
+
+## Combine Personalities + Skills
+
+The Plugin Builder gives your agent capabilities (skills, scripts, tools). [The Agent Library](https://github.com/msitarzewski/agency-agents) gives your agent a personality (expertise, workflows, deliverables). Combine both for a complete agent.
+
+```bash
+# 1. Get agent personalities
+git clone https://github.com/msitarzewski/agency-agents.git
+cd agency-agents && ./scripts/install.sh --tool claude-code
+
+# 2. Build your skill set
+cd ../ai-maestro-plugins
+./build-plugin.sh --clean
+
+# 3. Install the plugin
+claude plugin install ./plugins/ai-maestro
+
+# Your agent now has WHO (personality) + HOW (skills)
+```
+
+Want to pull agent personalities directly into your plugin manifest? See [`examples/manifest-with-personalities.json`](./examples/manifest-with-personalities.json) for a complete example that includes agency-agents as a git source alongside core skills, AMP, and AID.
+
+## The Agent Ecosystem
+
+Every AI agent has four dimensions. The Plugin Builder handles **HOW**. Here's the full picture:
+
+| | Dimension | What | Where |
+|-|-----------|------|-------|
+| **WHO** | Personality | Domain expertise, workflows, deliverables | [Agent Library](https://github.com/msitarzewski/agency-agents) (150+) |
+| **HOW** | Capabilities | Skills, scripts, CLI tools | **This repo** (Plugin Builder) |
+| **TRUST** | Identity | Cryptographic keys, OAuth tokens | [AID](https://agentids.org) |
+| **TALK** | Communication | Agent-to-agent messaging | [AMP](https://agentmessaging.org) |
+
+**AI Maestro** is the stage that orchestrates it all. [Read the full ecosystem guide.](https://github.com/23blocks-OS/ai-maestro/blob/main/docs/ECOSYSTEM.md)
 
 ## Learn More
 
