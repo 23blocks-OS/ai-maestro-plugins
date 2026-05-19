@@ -43,6 +43,16 @@
         "skills/agent-identity": "skills/agent-identity",
         "scripts/*.sh": "scripts/"
       }
+    },
+    {
+      "name": "agent-actions",
+      "description": "Agent Actions Protocol (AAP) — structured UI-to-agent canvas interactions",
+      "type": "git",
+      "repo": "https://github.com/agentmessaging/agent-actions.git",
+      "ref": "main",
+      "map": {
+        "skills/canvas-actions": "skills/canvas-actions"
+      }
     }
   ]
 }
