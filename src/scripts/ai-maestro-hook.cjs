@@ -47,18 +47,68 @@ function hashCwd(cwd) {
 // Broadcast status update via WebSocket (non-blocking)
 async function broadcastStatusUpdate(cwd, state) {
     try {
-        // Find the session name for this working directory
-        const agentsResponse = await fetch('http://localhost:23000/api/agents');
-        if (!agentsResponse.ok) return;
+        let agent = null;
 
-        const agentsData = await agentsResponse.json();
-        const agent = (agentsData.agents || []).find(a => {
-            const agentWd = a.workingDirectory || a.session?.workingDirectory;
-            if (!agentWd) return false;
-            if (agentWd === cwd) return true;
-            if (cwd.startsWith(agentWd + '/')) return true;
-            return false;
-        });
+        // Priority 1: Use AIM_AGENT_ID or AIM_AGENT_NAME env vars (set by AI Maestro)
+        const envAgentId = process.env.AIM_AGENT_ID;
+        const envAgentName = process.env.AIM_AGENT_NAME;
+
+        if (envAgentId || envAgentName) {
+            const agentsResponse = await fetch('http://localhost:23000/api/agents');
+            if (agentsResponse.ok) {
+                const agentsData = await agentsResponse.json();
+                const agents = agentsData.agents || [];
+                if (envAgentId) {
+                    agent = agents.find(a => a.id === envAgentId);
+                }
+                if (!agent && envAgentName) {
+                    agent = agents.find(a => a.name === envAgentName);
+                }
+                if (agent) {
+                    debugLog({ event: 'resolved_agent_from_env', source: envAgentId ? 'id' : 'name', value: envAgentId || envAgentName });
+                }
+            }
+        }
+
+        // Priority 2: Use /api/sessions (only active tmux sessions — avoids cwd ambiguity)
+        if (!agent) {
+            try {
+                const sessionsResponse = await fetch('http://localhost:23000/api/sessions');
+                if (sessionsResponse.ok) {
+                    const sessionsData = await sessionsResponse.json();
+                    const sessions = sessionsData.sessions || [];
+                    const match = sessions.find(s => {
+                        const swd = s.workingDirectory;
+                        if (!swd) return false;
+                        if (swd === cwd) return true;
+                        if (cwd.startsWith(swd + '/')) return true;
+                        return false;
+                    });
+                    if (match) {
+                        // Build a pseudo-agent object from session data
+                        agent = { id: match.agentId, name: match.name };
+                        debugLog({ event: 'resolved_agent_from_session', name: match.name, agentId: match.agentId });
+                    }
+                }
+            } catch (e) {
+                debugLog({ event: 'sessions_lookup_failed', error: e.message });
+            }
+        }
+
+        // Priority 3: Fallback to /api/agents cwd match (may be ambiguous)
+        if (!agent) {
+            const agentsResponse = await fetch('http://localhost:23000/api/agents');
+            if (agentsResponse.ok) {
+                const agentsData = await agentsResponse.json();
+                agent = (agentsData.agents || []).find(a => {
+                    const agentWd = a.workingDirectory || a.session?.workingDirectory;
+                    if (!agentWd) return false;
+                    if (agentWd === cwd) return true;
+                    if (cwd.startsWith(agentWd + '/')) return true;
+                    return false;
+                });
+            }
+        }
 
         if (!agent) return;
 
