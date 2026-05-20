@@ -218,13 +218,21 @@ cmd_hibernate() {
 }
 
 cmd_wake() {
-    local agent="" attach=false
+    local agent="" attach=false trust_level=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --attach) attach=true; shift ;;
+            -T|--trust-level)
+                [[ $# -lt 2 ]] && { print_error "-T/--trust-level requires a value"; return 1; }
+                trust_level="$2"; shift 2 ;;
             -h|--help)
-                echo "Usage: aimaestro-agent.sh wake <agent> [--attach]"
+                echo "Usage: aimaestro-agent.sh wake <agent> [--attach] [-T|--trust-level <level>]"
+                echo ""
+                echo "Options:"
+                echo "  --attach               Attach to tmux session after waking"
+                echo "  -T, --trust-level <l>  Override trust level for this session"
+                echo "                         (supervised|planOnly|trustEdits|smartAuto|fullAutonomy)"
                 return 0 ;;
             -*) print_error "Unknown option: $1"; return 1 ;;
             *) agent="$1"; shift ;;
@@ -233,14 +241,30 @@ cmd_wake() {
 
     [[ -z "$agent" ]] && { print_error "Agent name required"; return 1; }
 
+    # Validate trust level if provided
+    if [[ -n "$trust_level" ]]; then
+        local allowed_levels="supervised planOnly trustEdits smartAuto fullAutonomy"
+        if [[ ! " $allowed_levels " =~ [[:space:]]"${trust_level}"[[:space:]] ]]; then
+            print_error "Invalid trust level: $trust_level"
+            print_error "Allowed: $allowed_levels"
+            return 1
+        fi
+    fi
+
     resolve_agent "$agent" || return 1
 
     local api_base
     api_base=$(get_api_base)
 
     print_info "Waking agent '$RESOLVED_ALIAS'..."
+    local wake_payload='{}'
+    if [[ -n "$trust_level" ]]; then
+        wake_payload=$(jq -n --arg tl "$trust_level" '{permissionMode: $tl}')
+    fi
     local response
-    response=$(curl -s --max-time 30 -X POST "${api_base}/api/agents/${RESOLVED_AGENT_ID}/wake")
+    response=$(curl -s --max-time 30 -X POST "${api_base}/api/agents/${RESOLVED_AGENT_ID}/wake" \
+        -H "Content-Type: application/json" \
+        -d "$wake_payload")
 
     local error
     error=$(echo "$response" | jq -r '.error // empty')

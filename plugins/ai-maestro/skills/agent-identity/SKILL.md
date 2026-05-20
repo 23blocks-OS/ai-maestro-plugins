@@ -4,7 +4,7 @@ description: Authenticate AI agents with auth servers using the Agent Identity (
 license: MIT
 compatibility: Requires curl, jq, openssl (3.x for Ed25519), and base64 CLI tools. macOS and Linux supported.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
   homepage: "https://agentids.org"
   repository: "https://github.com/agentmessaging/agent-identity"
 ---
@@ -204,6 +204,32 @@ Agents should map these user intents to the appropriate commands:
 
 AID shares the `~/.agent-messaging/agents/` directory with [AMP](https://agentmessaging.org) if both are installed. One identity serves both protocols. Neither requires the other.
 
+## Agent Lifecycle
+
+Agents have 4 lifecycle states controlled by the admin:
+
+| Status | Can get tokens? | Introspection |
+|--------|----------------|---------------|
+| `pending` | No | `active: false` |
+| `active` | Yes | `active: true` |
+| `suspended` | No (403) | `active: false, reason: agent_suspended` |
+| `deleted` | No | `active: false, reason: agent_not_found` |
+
+Admin commands:
+- Suspend: `POST /agent_registrations/:id/suspend`
+- Reactivate: `POST /agent_registrations/:id/reactivate`
+
+## Token Introspection
+
+Target APIs can verify agent tokens in real-time:
+
+```
+POST /:tenant/oauth/introspect
+token=eyJhbGciOiJSUz...
+```
+
+Returns `active: true/false` with agent details. Useful for detecting suspended agents before their token expires.
+
 ## Troubleshooting
 
 | Problem | Solution |
@@ -214,6 +240,8 @@ AID shares the `~/.agent-messaging/agents/` directory with [AMP](https://agentme
 | "Invalid signature" | Agent identity may be corrupted; re-init and re-register |
 | "Fingerprint mismatch" | Agent key changed since registration; re-register |
 | "Scope not allowed" | Request only scopes granted during registration |
+| "Agent suspended" | Admin has suspended this agent; contact admin for reactivation |
+| "403 on token exchange" | Agent may be suspended; run `aid-status` to check |
 
 ## Protocol Reference
 

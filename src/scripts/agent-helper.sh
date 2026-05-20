@@ -560,11 +560,12 @@ print_table_sep() {
 #   RESOLVED_NAME       - Agent display name (for messaging compatibility)
 #
 # Returns: 0 if found, 1 if not found
-declare -g RESOLVED_AGENT_ID=""
-declare -g RESOLVED_ALIAS=""
-declare -g RESOLVED_HOST_ID=""
-declare -g RESOLVED_HOST_URL=""
-declare -g RESOLVED_NAME=""
+# Global resolution results (no declare -g; bash 3.2 on macOS lacks it)
+RESOLVED_AGENT_ID=""
+RESOLVED_ALIAS=""
+RESOLVED_HOST_ID=""
+RESOLVED_HOST_URL=""
+RESOLVED_NAME=""
 
 resolve_agent() {
     local agent_query="${1:-}"

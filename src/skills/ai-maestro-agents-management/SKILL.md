@@ -52,7 +52,9 @@ aimaestro-agent.sh show <agent> [--format pretty|json]
 aimaestro-agent.sh create <name> --dir <path> [options] [-- <program-args>...]
 ```
 
-Options: `-p/--program`, `-m/--model`, `-t/--task`, `--tags`, `--no-session`, `--no-folder`, `--force-folder`
+Options: `-p/--program`, `-m/--model`, `-t/--task`, `--tags`, `-T/--trust-level`, `--no-session`, `--no-folder`, `--force-folder`
+
+Trust levels: `supervised` (default), `planOnly`, `trustEdits`, `smartAuto`, `fullAutonomy`
 
 Examples:
 ```bash
@@ -62,6 +64,7 @@ aimaestro-agent.sh create backend-service \
   --task "Implement user authentication with JWT" \
   --tags "api,auth,security"
 aimaestro-agent.sh create debug-agent --dir /Users/dev/projects/debug -- --verbose --debug
+aimaestro-agent.sh create auto-agent --dir ~/Code/auto --trust-level smartAuto
 ```
 
 ### 4. Update Agent
@@ -102,7 +105,14 @@ aimaestro-agent.sh hibernate <agent>
 ### 8. Wake Agent
 
 ```bash
-aimaestro-agent.sh wake <agent> [--attach]
+aimaestro-agent.sh wake <agent> [--attach] [-T|--trust-level <level>]
+```
+
+The `-T/--trust-level` flag overrides the agent's stored trust level for this session only.
+
+Example:
+```bash
+aimaestro-agent.sh wake researcher --trust-level planOnly
 ```
 
 ### 9. Restart Agent

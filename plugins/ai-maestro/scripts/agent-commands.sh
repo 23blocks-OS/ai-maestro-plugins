@@ -312,7 +312,7 @@ cmd_show() {
 # ============================================================================
 
 cmd_create() {
-    local name="" dir="" program="claude-code" model="" task="" tags=""
+    local name="" dir="" program="claude-code" model="" task="" tags="" trust_level=""
     local no_session=false no_folder=false force_folder=false
     local -a program_args=()  # Arguments to pass to the program (after --)
 
@@ -333,6 +333,9 @@ cmd_create() {
             --tags)
                 [[ $# -lt 2 ]] && { print_error "--tags requires a value"; return 1; }
                 tags="$2"; shift 2 ;;
+            -T|--trust-level)
+                [[ $# -lt 2 ]] && { print_error "-T/--trust-level requires a value"; return 1; }
+                trust_level="$2"; shift 2 ;;
             --no-session) no_session=true; shift ;;
             --no-folder) no_folder=true; shift ;;
             --force-folder) force_folder=true; shift ;;
@@ -351,6 +354,7 @@ Options:
   -m, --model <model>    AI model (e.g., claude-sonnet-4)
   -t, --task <desc>      Task description
   --tags <t1,t2>         Comma-separated tags
+  -T, --trust-level <l>  Trust level (supervised|planOnly|trustEdits|smartAuto|fullAutonomy)
   --no-session           Don't create tmux session
   --no-folder            Don't create project folder
   --force-folder         Use existing directory (by default, errors if exists)
@@ -482,6 +486,16 @@ HELP
     [[ -n "$model" ]] && payload=$(echo "$payload" | jq --arg m "$model" '. + {model: $m}')
     [[ -n "$task" ]] && payload=$(echo "$payload" | jq --arg t "$task" '. + {taskDescription: $t}')
     [[ -n "$tags" ]] && payload=$(echo "$payload" | jq --arg t "$tags" '. + {tags: ($t | split(","))}')
+    # Trust level
+    if [[ -n "$trust_level" ]]; then
+        local allowed_levels="supervised planOnly trustEdits smartAuto fullAutonomy"
+        if [[ ! " $allowed_levels " =~ [[:space:]]"${trust_level}"[[:space:]] ]]; then
+            print_error "Invalid trust level: $trust_level"
+            print_error "Allowed: $allowed_levels"
+            return 1
+        fi
+        payload=$(echo "$payload" | jq --arg tl "$trust_level" '. + {permissionMode: $tl}')
+    fi
     # Program arguments (passed after --) - sent as string
     if [[ ${#program_args[@]} -gt 0 ]]; then
         local args_str="${program_args[*]}"
