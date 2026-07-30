@@ -182,6 +182,61 @@ function debugLog(data) {
     fs.appendFileSync(debugFile, line);
 }
 
+// ── Stop-hook delivery dedup ────────────────────────────────────────────────
+// The Stop hook blocks (forces the agent to keep working) to deliver unread
+// AMP messages. To avoid re-blocking on the SAME messages every turn (which
+// would trap the agent in a loop), we remember which message IDs we've already
+// surfaced per cwd and only block when genuinely-new unread messages appear.
+
+function notifiedIdsFile(cwd) {
+    const stateDir = path.join(os.homedir(), '.aimaestro', 'chat-state');
+    return path.join(stateDir, `${hashCwd(cwd)}.notified.json`);
+}
+
+function loadNotifiedIds(cwd) {
+    try {
+        const arr = JSON.parse(fs.readFileSync(notifiedIdsFile(cwd), 'utf8'));
+        return Array.isArray(arr) ? arr : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveNotifiedIds(cwd, ids) {
+    try {
+        const stateDir = path.join(os.homedir(), '.aimaestro', 'chat-state');
+        fs.mkdirSync(stateDir, { recursive: true });
+        // Keep the most recent 200 to bound file growth.
+        fs.writeFileSync(notifiedIdsFile(cwd), JSON.stringify(ids.slice(-200)));
+    } catch (e) {
+        debugLog({ event: 'save_notified_ids_failed', error: e.message });
+    }
+}
+
+// Build the multi-line reason string handed back to Claude on a Stop-hook block.
+// This becomes the agent's instruction to read + respond before it stops.
+function buildAmpBlockReason(messages) {
+    const urgentCount = messages.filter(m => m.priority === 'urgent').length;
+    const header = messages.length === 1
+        ? `[AMP] You have 1 unread message in your inbox:`
+        : `[AMP] You have ${messages.length} unread messages in your inbox${urgentCount > 0 ? ` (${urgentCount} urgent)` : ''}:`;
+    const lines = messages.slice(0, 10).map((m, i) => {
+        const from = formatMessageSender(m);
+        const subj = m.subject ? ` — "${m.subject}"` : '';
+        const urgent = m.priority === 'urgent' ? '[URGENT] ' : '';
+        return `  ${i + 1}. ${urgent}from ${from}${subj}`;
+    });
+    const more = messages.length > 10 ? `  …and ${messages.length - 10} more` : '';
+    return [
+        header,
+        ...lines,
+        more,
+        '',
+        'Read and respond to these now using the agent-messaging skill',
+        '(amp-inbox.sh, amp-read.sh <id>, amp-reply.sh <id> "..."), then continue.',
+    ].filter(Boolean).join('\n');
+}
+
 // Detect which AI agent is calling this hook
 function detectAgent(input) {
     // Gemini CLI sets GEMINI_SESSION_ID or has gemini-specific fields
@@ -244,57 +299,63 @@ async function checkUnreadMessagesStandalone() {
     }
 }
 
-// Check for unread messages for this agent
+// Fetch the raw unread messages for the agent that owns `cwd`.
+// Returns { agentId, messages } or null (no agent / no unread / API down).
+// Shared by the idle/session-start context injection AND the Stop-hook block
+// delivery, so both surface the same inbox state.
+async function fetchUnreadMessages(cwd) {
+    // Find agent by working directory
+    const agentsResponse = await fetch('http://localhost:23000/api/agents', { signal: AbortSignal.timeout(2500) });
+    if (!agentsResponse.ok) return null;
+
+    const agentsData = await agentsResponse.json();
+    const agents = agentsData.agents || [];
+
+    // Find agent matching this working directory (exact, or cwd inside it)
+    const agent = agents.find(a => {
+        const agentWd = a.workingDirectory || a.session?.workingDirectory;
+        if (!agentWd) return false;
+        if (agentWd === cwd) return true;
+        if (cwd.startsWith(agentWd + '/')) return true;
+        return false;
+    });
+
+    if (!agent) {
+        debugLog({ event: 'no_agent_for_cwd', cwd });
+        return null;
+    }
+
+    const messagesResponse = await fetch(
+        `http://localhost:23000/api/messages?agent=${encodeURIComponent(agent.id)}&box=inbox&status=unread`,
+        { signal: AbortSignal.timeout(2500) }
+    );
+    if (!messagesResponse.ok) return null;
+
+    const messagesData = await messagesResponse.json();
+    const messages = messagesData.messages || [];
+    if (messages.length === 0) return null;
+
+    debugLog({ event: 'unread_messages_found', agentId: agent.id, count: messages.length });
+    return { agentId: agent.id, messages };
+}
+
+// Human-readable sender label for a message.
+function formatMessageSender(msg) {
+    const name = msg.fromAlias || (msg.from ? msg.from.substring(0, 8) : 'unknown');
+    const host = msg.fromHost ? ` (${msg.fromHost})` : '';
+    return `${name}${host}`;
+}
+
+// Check for unread messages for this agent (formatted one-line summary for
+// additionalContext injection on idle_prompt / SessionStart).
 async function checkUnreadMessages(cwd) {
     try {
-        // Find agent by working directory
-        const agentsResponse = await fetch('http://localhost:23000/api/agents');
-        if (!agentsResponse.ok) return null;
-
-        const agentsData = await agentsResponse.json();
-        const agents = agentsData.agents || [];
-
-        // Find agent matching this working directory
-        // Check exact match first, then check if cwd is within the agent's directory or vice versa
-        const agent = agents.find(a => {
-            const agentWd = a.workingDirectory || a.session?.workingDirectory;
-            if (!agentWd) return false;
-
-            // Exact match
-            if (agentWd === cwd) return true;
-
-            // cwd is subdirectory of agent's working directory
-            if (cwd.startsWith(agentWd + '/')) return true;
-
-            // Agent's working directory is subdirectory of cwd
-
-            return false;
-        });
-
-        if (!agent) {
-            debugLog({ event: 'no_agent_for_cwd', cwd });
-            return null;
-        }
-
-        // Check for unread messages
-        const messagesResponse = await fetch(
-            `http://localhost:23000/api/messages?agent=${encodeURIComponent(agent.id)}&box=inbox&status=unread`
-        );
-        if (!messagesResponse.ok) return null;
-
-        const messagesData = await messagesResponse.json();
-        const messages = messagesData.messages || [];
-
-        if (messages.length === 0) return null;
-
-        debugLog({ event: 'unread_messages_found', agentId: agent.id, count: messages.length });
+        const unread = await fetchUnreadMessages(cwd);
+        if (!unread) return null;
+        const messages = unread.messages;
 
         // Format message notification
-        const formatSender = (msg) => {
-            const name = msg.fromAlias || (msg.from ? msg.from.substring(0, 8) : 'unknown');
-            const host = msg.fromHost ? ` (${msg.fromHost})` : '';
-            return `${name}${host}`;
-        };
+        const formatSender = formatMessageSender;
 
         if (messages.length === 1) {
             const msg = messages[0];
@@ -460,16 +521,52 @@ async function main() {
             }
             break;
 
-        case 'Stop':
-            // Claude finished responding - keep this fast (no API calls)
-            // Inbox check happens on idle_prompt notification which fires shortly after
+        case 'Stop': {
+            // The agent just finished its turn. This is the ONE reliable moment
+            // to deliver unread AMP messages: injecting context on idle_prompt
+            // cannot start a turn on an already-idle agent (the old failure that
+            // forced operators to manually type "check your inbox"). By returning
+            // { decision: "block", reason } here we force the agent to continue
+            // and process the messages before it goes idle.
+            //
+            // Loop safety:
+            //   - input.stop_hook_active is set by Claude Code when THIS Stop was
+            //     itself triggered by a prior block — never block twice in a row.
+            //   - We dedup on message IDs so the same unread messages only ever
+            //     trigger one block; genuinely-new messages still nudge.
+            let blocked = false;
+
+            // decision:block is a Claude Code Stop-hook capability. For other
+            // agents (codex/gemini) fall through to idle state only.
+            if (agent === 'claude' && !input.stop_hook_active) {
+                try {
+                    const unread = await fetchUnreadMessages(cwd);
+                    if (unread && unread.messages.length > 0) {
+                        const already = new Set(loadNotifiedIds(cwd));
+                        const fresh = unread.messages.filter(m => m.id && !already.has(m.id));
+                        if (fresh.length > 0) {
+                            saveNotifiedIds(cwd, [...already, ...fresh.map(m => m.id)]);
+                            debugLog({ event: 'stop_block_delivery', cwd, count: fresh.length });
+                            hookResponse = {
+                                decision: 'block',
+                                reason: buildAmpBlockReason(fresh),
+                            };
+                            blocked = true;
+                        }
+                    }
+                } catch (err) {
+                    debugLog({ event: 'stop_block_check_failed', error: err.message });
+                }
+            }
+
             writeState(cwd, {
-                status: 'idle',
+                status: blocked ? 'active' : 'idle',
                 message: null,
                 sessionId,
                 transcriptPath
             });
             break;
+        }
 
         case 'SessionStart':
             // Session started - record the session info
