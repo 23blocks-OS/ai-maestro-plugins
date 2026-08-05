@@ -44,6 +44,24 @@ function hashCwd(cwd) {
     return crypto.createHash('md5').update(cwd || '').digest('hex').substring(0, 16);
 }
 
+function resolveByCwd(cwd, agents) {
+    // Resolve an agent by working directory, but ONLY when unambiguous. Agents can
+    // share a directory (a dev dir, /private/tmp) or claim a broad one ($HOME);
+    // returning the FIRST match silently misattributed sessions (every session under
+    // $HOME becoming whatever agent claimed home). Pick the MOST SPECIFIC match
+    // (longest workingDirectory); if several tie, the cwd is ambiguous, return null.
+    const matches = (agents || []).map(a => {
+        const wd = a.workingDirectory || (a.session && a.session.workingDirectory);
+        if (!wd) return null;
+        if (wd === cwd || cwd.startsWith(wd + '/')) return { a, len: wd.length };
+        return null;
+    }).filter(Boolean);
+    if (matches.length === 0) return null;
+    const maxLen = Math.max(...matches.map(m => m.len));
+    const best = matches.filter(m => m.len === maxLen);
+    return best.length === 1 ? best[0].a : null;
+}
+
 // Broadcast status update via WebSocket (non-blocking)
 async function broadcastStatusUpdate(cwd, state) {
     try {
@@ -100,13 +118,7 @@ async function broadcastStatusUpdate(cwd, state) {
             const agentsResponse = await fetch('http://localhost:23000/api/agents');
             if (agentsResponse.ok) {
                 const agentsData = await agentsResponse.json();
-                agent = (agentsData.agents || []).find(a => {
-                    const agentWd = a.workingDirectory || a.session?.workingDirectory;
-                    if (!agentWd) return false;
-                    if (agentWd === cwd) return true;
-                    if (cwd.startsWith(agentWd + '/')) return true;
-                    return false;
-                });
+                agent =resolveByCwd(cwd, (agentsData.agents || []));
             }
         }
 
@@ -312,13 +324,7 @@ async function fetchUnreadMessages(cwd) {
     const agents = agentsData.agents || [];
 
     // Find agent matching this working directory (exact, or cwd inside it)
-    const agent = agents.find(a => {
-        const agentWd = a.workingDirectory || a.session?.workingDirectory;
-        if (!agentWd) return false;
-        if (agentWd === cwd) return true;
-        if (cwd.startsWith(agentWd + '/')) return true;
-        return false;
-    });
+    const agent =resolveByCwd(cwd, agents);
 
     if (!agent) {
         debugLog({ event: 'no_agent_for_cwd', cwd });
