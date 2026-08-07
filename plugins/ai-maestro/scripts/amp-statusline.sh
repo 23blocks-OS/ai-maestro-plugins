@@ -125,12 +125,22 @@ elif [ -n "${TMUX:-}" ]; then
 
 # Priority 4: Working directory → AI Maestro API
 elif [ -n "$CWD" ]; then
+    # Match by working directory, but ONLY when it uniquely identifies one agent.
+    # Many agents can share a dir, or claim a broad one ($HOME), so taking the first
+    # match silently showed the WRONG identity (every session under $HOME becoming
+    # "piano-instructor", or a dev dir picking a random one of the agents there).
+    # Pick the MOST SPECIFIC match (longest workingDirectory); if several tie, the cwd
+    # is ambiguous, so show nothing rather than a wrong name.
     MAESTRO_AGENT=$(curl -s --connect-timeout 1 "${AMP_MAESTRO_URL:-http://localhost:23000}/api/agents" 2>/dev/null | \
         jq -r --arg cwd "$CWD" '
-            .agents[] |
-            select((.workingDirectory // .session.workingDirectory // "") as $wd |
-                $wd != "" and ($cwd == $wd or ($cwd | startswith($wd + "/"))))
-            | .name' 2>/dev/null | head -1)
+            [ .agents[]
+              | (.workingDirectory // .session.workingDirectory // "") as $wd
+              | select($wd != "" and ($cwd == $wd or ($cwd | startswith($wd + "/"))))
+              | {name: .name, len: ($wd | length)} ]
+            | (map(.len) | max) as $mx
+            | map(select(.len == $mx))
+            | if length == 1 then .[0].name else empty end
+        ' 2>/dev/null)
     [ -n "$MAESTRO_AGENT" ] && AGENT_NAME="$MAESTRO_AGENT"
 fi
 
@@ -140,7 +150,10 @@ if [ -z "$AGENT_UUID" ] && [ -z "$AGENT_NAME" ] && [ -n "$CWD" ]; then
     while [ "$_dir" != "/" ] && [ "$_dir" != "$HOME" ]; do
         _settings="${_dir}/.claude/settings.local.json"
         if [ -f "$_settings" ]; then
-            _hint=$(grep -o 'CLAUDE_AGENT_NAME=[a-zA-Z0-9_-]*' "$_settings" 2>/dev/null | head -1 | cut -d= -f2)
+            # Read the REAL env hint, not any occurrence of the string in the file.
+            # grep-ing the raw file matched permission allow-list entries like
+            # "Bash(CLAUDE_AGENT_NAME=foo amp-send.sh:*)" and showed a bogus identity.
+            _hint=$(jq -r '(.env.CLAUDE_AGENT_NAME // .env.AIM_AGENT_NAME // empty)' "$_settings" 2>/dev/null)
             if [ -n "$_hint" ]; then
                 AGENT_NAME="$_hint"
                 break
