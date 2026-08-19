@@ -1805,6 +1805,13 @@ download_attachment() {
     filename=$(echo "$attachment_json" | jq -r '.filename')
     local expected_digest
     expected_digest=$(echo "$attachment_json" | jq -r '.digest // empty')
+    # Normalize to the "sha256:<hex>" form that compute_file_digest emits. A
+    # sender may store a bare-hex digest; without this it mismatched the computed
+    # value and a VALID attachment was deleted as "tampered" (issue #20).
+    case "$expected_digest" in
+        ''|sha256:*) : ;;
+        *) expected_digest="sha256:${expected_digest}" ;;
+    esac
     local expected_size
     expected_size=$(echo "$attachment_json" | jq -r '.size // empty')
     local download_url

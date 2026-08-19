@@ -15,6 +15,7 @@
 # Agent resolution order:
 #   1. AMP_AGENT_ID env var (explicit UUID)
 #   2. CLAUDE_AGENT_NAME env var (AI Maestro sets this)
+#   2.5 Claude Code native session_name (`claude --name`), if it maps to an agent
 #   3. tmux session name
 #   4. Working directory → AI Maestro API lookup
 #   5. Working directory → walk up to .claude/settings.local.json for
@@ -101,6 +102,9 @@ MODEL=$(echo "$input" | jq -r '.model.display_name // "?"')
 PCT=$(echo "$input" | jq -r '.context_window.used_percentage // 0' | cut -d. -f1)
 COST=$(echo "$input" | jq -r '.cost.total_cost_usd // 0')
 CWD=$(echo "$input" | jq -r '.workspace.current_dir // empty')
+# Claude Code's native session name (set by `claude --name` / `/rename`). Present
+# only when a custom or AI-generated title exists; used below as an identity hint.
+SESSION_NAME=$(echo "$input" | jq -r '.session_name // empty')
 
 # --- Resolve AMP agent ---
 AGENTS_BASE="${HOME}/.agent-messaging/agents"
@@ -118,6 +122,13 @@ if [ -n "${AMP_AGENT_ID:-}" ]; then
 # Priority 2: Agent name from env
 elif [ -n "${CLAUDE_AGENT_NAME:-}" ]; then
     AGENT_NAME="$CLAUDE_AGENT_NAME"
+
+# Priority 2.5: Claude Code's native session name (set by `claude --name`, as
+# AI Maestro does when launching an agent). Trust it ONLY when it maps to a known
+# agent — an AI-generated session title must not shadow the cwd/hint fallbacks.
+elif [ -n "$SESSION_NAME" ] && [ -f "$INDEX_FILE" ] && \
+     [ -n "$(jq -r --arg n "$SESSION_NAME" '.[$n] // empty' "$INDEX_FILE" 2>/dev/null)" ]; then
+    AGENT_NAME="$SESSION_NAME"
 
 # Priority 3: tmux session name
 elif [ -n "${TMUX:-}" ]; then
@@ -188,6 +199,21 @@ if [ -n "$AGENT_UUID" ]; then
             STATUS=$(jq -r '.local.status // .metadata.status // "unread"' "$msg_file" 2>/dev/null)
             [ "$STATUS" = "unread" ] && UNREAD=$((UNREAD + 1))
         done < <(find "$INBOX_DIR" -name '*.json' -type f -print0 2>/dev/null)
+    fi
+fi
+
+# Report this session's cumulative cost to AI Maestro so the agent's "API Cost"
+# metric reflects real usage. Best-effort, backgrounded, never blocks the render.
+# Only PATCH when the cost has GROWN (monotonic): avoids spamming the API every
+# render and avoids the value dipping to ~0 when a new session starts. (Lifetime
+# accumulation across sessions is a later OTLP concern.)
+if [ -n "$AGENT_UUID" ] && [ -n "$COST" ]; then
+    _cost_cache="${AGENTS_BASE}/${AGENT_UUID}/.last-cost"
+    _last_cost=$(cat "$_cost_cache" 2>/dev/null || echo 0)
+    if awk -v c="$COST" -v l="$_last_cost" 'BEGIN{exit !(c+0 > l+0)}' 2>/dev/null; then
+        echo "$COST" > "$_cost_cache" 2>/dev/null
+        curl -s -m 2 -X PATCH "${AMP_MAESTRO_URL:-http://localhost:23000}/api/agents/${AGENT_UUID}/metrics" \
+            -H 'Content-Type: application/json' -d "{\"estimatedCost\": ${COST}}" >/dev/null 2>&1 &
     fi
 fi
 

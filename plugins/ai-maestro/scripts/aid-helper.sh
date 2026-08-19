@@ -315,3 +315,161 @@ generate_keypair() {
 
     echo "SHA256:${fingerprint}"
 }
+
+# =============================================================================
+# derive_did_key — Compute the did:key identifier for an Ed25519 public key
+# =============================================================================
+#
+# The agent's canonical, self-certifying identifier (F015). did:key binds the
+# identifier to the key itself, so the id can never drift from the key material
+# (the failure class behind the AI Maestro identity contamination). Format:
+#   did:key:z<base58btc( multicodec(0xed01) || raw-32-byte-ed25519-pubkey )>
+# Ref: https://w3c-ccg.github.io/did-method-key/ (Ed25519 multicodec 0xed).
+#
+# Usage: derive_did_key [public.pem]   (defaults to the agent's public key)
+# Requires: openssl, python3 (for base58btc).
+#
+derive_did_key() {
+    require_openssl
+    local public_key="${1:-${AMP_KEYS_DIR}/public.pem}"
+    if [ ! -f "${public_key}" ]; then
+        echo "Error: public key not found: ${public_key}" >&2
+        return 1
+    fi
+    python3 - "${public_key}" <<'PYEOF'
+import subprocess, sys
+der = subprocess.run(
+    ["openssl", "pkey", "-pubin", "-in", sys.argv[1], "-outform", "DER"],
+    capture_output=True).stdout
+if len(der) < 32:
+    sys.stderr.write("Error: could not read Ed25519 public key\n"); sys.exit(1)
+raw = der[-32:]                       # last 32 bytes = raw Ed25519 public key
+mc = b"\xed\x01" + raw                # multicodec prefix for ed25519-pub
+alpha = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+n = int.from_bytes(mc, "big"); s = ""
+while n > 0:
+    n, r = divmod(n, 58); s = alpha[r] + s
+for b in mc:                          # preserve leading zero bytes as '1'
+    if b == 0: s = "1" + s
+    else: break
+print("did:key:z" + s)
+PYEOF
+}
+
+# =============================================================================
+# Discovery — Fetch and validate OAuth metadata documents
+# =============================================================================
+#
+# RFC 9728 (Protected Resource Metadata) lives at the resource server.
+# RFC 8414 (Authorization Server Metadata) lives at the auth server and
+# carries AID's aid_grant block.
+#
+# Both helpers print JSON to stdout on success and a single error line to
+# stderr + return 1 on failure. They do not exit — callers decide.
+
+# Fetch the protected-resource metadata for a resource URL.
+# Usage: fetch_protected_resource_metadata <resource_url>
+fetch_protected_resource_metadata() {
+    local resource="$1"
+    local base="${resource%/}"
+    local url="${base}/.well-known/oauth-protected-resource"
+
+    local response
+    response=$(curl -sfL --connect-timeout 10 --max-time 15 \
+        -H "Accept: application/json" "$url" 2>/dev/null) || {
+        echo "Failed to fetch ${url}" >&2
+        return 1
+    }
+
+    if ! echo "$response" | jq -e . >/dev/null 2>&1; then
+        echo "Invalid JSON from ${url}" >&2
+        return 1
+    fi
+
+    echo "$response"
+}
+
+# Fetch the authorization-server metadata for an auth server URL.
+# Usage: fetch_authorization_server_metadata <auth_server_url>
+fetch_authorization_server_metadata() {
+    local auth_server="$1"
+    local base="${auth_server%/}"
+    local url="${base}/.well-known/oauth-authorization-server"
+
+    local response
+    response=$(curl -sfL --connect-timeout 10 --max-time 15 \
+        -H "Accept: application/json" "$url" 2>/dev/null) || {
+        echo "Failed to fetch ${url}" >&2
+        return 1
+    }
+
+    if ! echo "$response" | jq -e . >/dev/null 2>&1; then
+        echo "Invalid JSON from ${url}" >&2
+        return 1
+    fi
+
+    echo "$response"
+}
+
+# Resolve a resource URL to a unified AID discovery blob.
+# Walks RFC 9728 → RFC 8414, validates the aid_grant block, and emits a
+# single JSON document with the fields aid-token / aid-request need.
+#
+# Output keys: auth_server, token_endpoint, introspection_endpoint, jwks_uri,
+#              scopes_supported, aid_version, registration_endpoint,
+#              registration_request_endpoint, code_resolution_endpoint,
+#              agent_authorization_uri, key_algorithms_supported,
+#              credential_types_supported, polling_interval, resource
+#
+# Usage: discover_from_resource <resource_url>
+discover_from_resource() {
+    local resource="$1"
+    local prm asm auth_server
+
+    prm=$(fetch_protected_resource_metadata "$resource") || return 1
+
+    auth_server=$(echo "$prm" | jq -r '.authorization_servers[0] // empty')
+    if [ -z "$auth_server" ]; then
+        echo "No authorization_servers in protected resource metadata" >&2
+        return 1
+    fi
+
+    asm=$(fetch_authorization_server_metadata "$auth_server") || return 1
+
+    # Verify the server advertises the AID grant type
+    local supported
+    supported=$(echo "$asm" | jq -r '.grant_types_supported // [] | join(" ")')
+    if ! echo " $supported " | grep -q " urn:aid:agent-identity "; then
+        echo "Auth server ${auth_server} does not advertise urn:aid:agent-identity in grant_types_supported" >&2
+        return 1
+    fi
+
+    if ! echo "$asm" | jq -e '.aid_grant' >/dev/null 2>&1; then
+        echo "Auth server ${auth_server} is missing the aid_grant metadata block" >&2
+        return 1
+    fi
+
+    # Build the unified blob
+    jq -n \
+        --arg resource "$resource" \
+        --arg auth_server "$auth_server" \
+        --argjson prm "$prm" \
+        --argjson asm "$asm" \
+        '{
+            resource: $resource,
+            auth_server: $auth_server,
+            token_endpoint: ($asm.token_endpoint // null),
+            introspection_endpoint: ($asm.introspection_endpoint // null),
+            jwks_uri: ($asm.jwks_uri // null),
+            issuer: ($asm.issuer // null),
+            scopes_supported: ($asm.scopes_supported // $prm.scopes_supported // []),
+            aid_version: ($asm.aid_grant.aid_version // null),
+            registration_endpoint: ($asm.aid_grant.registration_endpoint // null),
+            registration_request_endpoint: ($asm.aid_grant.registration_request_endpoint // null),
+            code_resolution_endpoint: ($asm.aid_grant.code_resolution_endpoint // null),
+            agent_authorization_uri: ($asm.aid_grant.agent_authorization_uri // null),
+            key_algorithms_supported: ($asm.aid_grant.key_algorithms_supported // ["Ed25519"]),
+            credential_types_supported: ($asm.aid_grant.credential_types_supported // ["access_token"]),
+            polling_interval: ($asm.aid_grant.polling_interval // 5)
+        }'
+}
