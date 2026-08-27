@@ -133,6 +133,9 @@ echo "  Generating Ed25519 keypair..."
 AMP_KEYS_DIR="${AGENT_DIR}/keys"
 FINGERPRINT=$(generate_keypair "${AMP_KEYS_DIR}")
 
+# Canonical, self-certifying identifier (F015): key-derived did:key
+DID=$(derive_did_key "${AMP_KEYS_DIR}/public.pem" 2>/dev/null || echo "")
+
 # Build address
 TENANT="${AGENT_TENANT:-default}"
 ADDRESS="${AGENT_NAME}@${TENANT}.local"
@@ -142,6 +145,7 @@ jq -n \
     --arg name "$AGENT_NAME" \
     --arg tenant "$TENANT" \
     --arg address "$ADDRESS" \
+    --arg did "$DID" \
     --arg fingerprint "$FINGERPRINT" \
     --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{
@@ -150,6 +154,7 @@ jq -n \
             name: $name,
             tenant: $tenant,
             address: $address,
+            did: $did,
             fingerprint: $fingerprint,
             createdAt: $created
         }

@@ -31,20 +31,27 @@ source "${SCRIPT_DIR}/amp-helper.sh"
 # Parse arguments
 MESSAGE_ID=""
 REPLY_MESSAGE=""
+BODY_FILE=""
+BODY_STDIN=false
 PRIORITY=""
 TYPE="response"
 ATTACH_FILES=()
 
 show_help() {
     echo "Usage: amp-reply <message-id> <reply-message> [options]"
+    echo "       amp-reply <message-id> --body-file PATH [options]"
+    echo "       amp-reply <message-id> --body-stdin [options]"
     echo ""
     echo "Reply to a message."
     echo ""
     echo "Arguments:"
     echo "  message-id      The message ID to reply to"
-    echo "  reply-message   Your reply message"
+    echo "  reply-message   Your reply message (omit if using --body-file or --body-stdin)"
     echo ""
     echo "Options:"
+    echo "  --body-file PATH          Read reply body from a file (avoids shell escaping"
+    echo "                              issues with backticks, code blocks, box-drawing chars)"
+    echo "  --body-stdin              Read reply body from stdin"
     echo "  --priority, -p PRIORITY   Override priority (default: same as original)"
     echo "  --type, -t TYPE           Message type (default: response)"
     echo "  --attach, -a FILE         Attach a file (can be repeated)"
@@ -55,6 +62,8 @@ show_help() {
     echo "  amp-reply msg_1234567890_abc \"Got it, working on it\""
     echo "  amp-reply msg_1234567890_abc \"Urgent update\" --priority urgent"
     echo "  amp-reply msg_1234567890_abc \"See attached\" --attach report.pdf"
+    echo "  amp-reply msg_1234567890_abc --body-file reply.md"
+    echo "  cat reply.md | amp-reply msg_1234567890_abc --body-stdin"
 }
 
 # Parse positional and optional arguments
@@ -72,6 +81,14 @@ while [[ $# -gt 0 ]]; do
         --attach|-a)
             ATTACH_FILES+=("$2")
             shift 2
+            ;;
+        --body-file)
+            BODY_FILE="$2"
+            shift 2
+            ;;
+        --body-stdin)
+            BODY_STDIN=true
+            shift
             ;;
         --id)
             shift 2  # Already handled in pre-source parsing
@@ -92,16 +109,42 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Check positional arguments
-if [ ${#POSITIONAL[@]} -lt 2 ]; then
-    echo "Error: Missing required arguments."
+# Resolve body source: positional arg, file, or stdin (mutually exclusive)
+_body_sources=0
+[ -n "$BODY_FILE" ] && _body_sources=$((_body_sources + 1))
+[ "$BODY_STDIN" = true ] && _body_sources=$((_body_sources + 1))
+[ ${#POSITIONAL[@]} -ge 2 ] && _body_sources=$((_body_sources + 1))
+
+if [ $_body_sources -gt 1 ]; then
+    echo "Error: provide reply body via exactly one of: positional arg, --body-file, --body-stdin"
+    exit 1
+fi
+
+if [ ${#POSITIONAL[@]} -lt 1 ]; then
+    echo "Error: Missing message-id."
     echo ""
     show_help
     exit 1
 fi
 
 MESSAGE_ID="${POSITIONAL[0]}"
-REPLY_MESSAGE="${POSITIONAL[1]}"
+
+if [ -n "$BODY_FILE" ]; then
+    if [ ! -f "$BODY_FILE" ]; then
+        echo "Error: --body-file path not found: $BODY_FILE"
+        exit 1
+    fi
+    REPLY_MESSAGE=$(cat "$BODY_FILE")
+elif [ "$BODY_STDIN" = true ]; then
+    REPLY_MESSAGE=$(cat)
+elif [ ${#POSITIONAL[@]} -ge 2 ]; then
+    REPLY_MESSAGE="${POSITIONAL[1]}"
+else
+    echo "Error: Missing reply body. Provide as positional arg, --body-file PATH, or --body-stdin."
+    echo ""
+    show_help
+    exit 1
+fi
 
 # Validate message ID
 validate_message_id "$MESSAGE_ID" || {
