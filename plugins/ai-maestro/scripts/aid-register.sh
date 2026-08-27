@@ -154,9 +154,9 @@ REGISTER_URL="${AUTH_URL}/agent_registrations"
 
 REQUEST_BODY=$(jq -n \
     --arg name "$DISPLAY_NAME" \
-    --arg amp_address "$AMP_ADDRESS" \
-    --arg amp_fingerprint "$AMP_FINGERPRINT" \
-    --arg amp_public_key "$PUBLIC_KEY_PEM" \
+    --arg address "$AMP_ADDRESS" \
+    --arg fingerprint "$AMP_FINGERPRINT" \
+    --arg public_key "$PUBLIC_KEY_PEM" \
     --arg key_algorithm "Ed25519" \
     --argjson role_id "$ROLE_ID" \
     --arg description "$DESCRIPTION" \
@@ -164,9 +164,9 @@ REQUEST_BODY=$(jq -n \
     '{
         agent_registration: {
             name: $name,
-            amp_address: $amp_address,
-            amp_fingerprint: $amp_fingerprint,
-            amp_public_key: $amp_public_key,
+            address: $address,
+            fingerprint: $fingerprint,
+            public_key: $public_key,
             key_algorithm: $key_algorithm,
             role_id: $role_id,
             description: $description,
@@ -222,7 +222,7 @@ if [ "$HTTP_STATUS" = "201" ]; then
     AID_REG_DIR="${AMP_DIR}/api_registrations"
     mkdir -p "$AID_REG_DIR"
 
-    AUTH_HOST=$(echo "$AUTH_URL" | sed 's|https\?://||' | cut -d/ -f1)
+    AUTH_HOST=$(echo "$AUTH_URL" | sed -E 's|https?://||' | cut -d/ -f1)
     REG_FILE="${AID_REG_DIR}/${AUTH_HOST}.json"
 
     jq -n \

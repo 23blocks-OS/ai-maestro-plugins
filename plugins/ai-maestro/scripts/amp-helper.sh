@@ -101,6 +101,9 @@ require_openssl() {
 #      (symlink resolves to UUID dir if migrated)
 #   4. tmux session name → ~/.agent-messaging/agents/<name>/
 #      If the directory doesn't exist, it is auto-created.
+#   3.5 Working directory (DETACHED sessions): a .claude/settings.local.json
+#      env.CLAUDE_AGENT_NAME hint walked up from $PWD, else the AI Maestro
+#      registry's unique owner of $PWD. Only resolves when unambiguous.
 #
 AMP_AGENTS_BASE="${HOME}/.agent-messaging/agents"
 
@@ -156,6 +159,47 @@ if [ -z "${AMP_DIR:-}" ]; then
             _amp_resolved=true
         fi
         unset _amp_agent_name _amp_uuid
+    fi
+
+    # Priority 3.5: Working directory → per-project hint or AI Maestro registry.
+    #   For DETACHED sessions (no --id, no CLAUDE_AGENT_NAME env, no tmux) the cwd
+    #   is the only signal to pick one of many agents. Without this, Priority 4
+    #   below aborts with "Multiple AMP agents found" and AMP is unusable from a
+    #   detached Claude Code session. Resolve ONLY when the cwd is owned by exactly
+    #   one agent (most-specific match, unique); never guess an identity.
+    if [ "$_amp_resolved" = false ]; then
+        _amp_cwd="${PWD}"
+        _amp_hint=""
+        # (a) Walk up for a per-project settings.local.json env hint (same field
+        #     Claude Code injects as CLAUDE_AGENT_NAME and the statusline reads).
+        _amp_d="$_amp_cwd"
+        while [ -n "$_amp_d" ] && [ "$_amp_d" != "/" ]; do
+            _amp_s="${_amp_d}/.claude/settings.local.json"
+            if [ -f "$_amp_s" ]; then
+                _amp_hint=$(jq -r '(.env.CLAUDE_AGENT_NAME // .env.AIM_AGENT_NAME // empty)' "$_amp_s" 2>/dev/null)
+                [ -n "$_amp_hint" ] && break
+            fi
+            _amp_d=$(dirname "$_amp_d")
+        done
+        # (b) Else ask AI Maestro which agent UNIQUELY owns this cwd.
+        if [ -z "$_amp_hint" ]; then
+            _amp_hint=$(curl -s --connect-timeout 1 "${AMP_MAESTRO_URL:-http://localhost:23000}/api/agents" 2>/dev/null | \
+                jq -r --arg cwd "$_amp_cwd" '
+                    [ .agents[]
+                      | (.workingDirectory // .session.workingDirectory // "") as $wd
+                      | select($wd != "" and ($cwd == $wd or ($cwd | startswith($wd + "/"))))
+                      | {name: .name, len: ($wd | length)} ]
+                    | (map(.len) | max) as $mx
+                    | map(select(.len == $mx))
+                    | if length == 1 then .[0].name else empty end
+                ' 2>/dev/null)
+        fi
+        if [ -n "$_amp_hint" ]; then
+            _amp_uuid=$(_index_lookup "$_amp_hint" 2>/dev/null) || true
+            AMP_DIR="${AMP_AGENTS_BASE}/${_amp_uuid:-$_amp_hint}"
+            _amp_resolved=true
+        fi
+        unset _amp_cwd _amp_hint _amp_d _amp_s _amp_uuid
     fi
 
     # Priority 4: Single agent auto-select (convenience for solo setups)
@@ -1761,6 +1805,13 @@ download_attachment() {
     filename=$(echo "$attachment_json" | jq -r '.filename')
     local expected_digest
     expected_digest=$(echo "$attachment_json" | jq -r '.digest // empty')
+    # Normalize to the "sha256:<hex>" form that compute_file_digest emits. A
+    # sender may store a bare-hex digest; without this it mismatched the computed
+    # value and a VALID attachment was deleted as "tampered" (issue #20).
+    case "$expected_digest" in
+        ''|sha256:*) : ;;
+        *) expected_digest="sha256:${expected_digest}" ;;
+    esac
     local expected_size
     expected_size=$(echo "$attachment_json" | jq -r '.size // empty')
     local download_url

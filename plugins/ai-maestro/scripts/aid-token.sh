@@ -29,21 +29,27 @@ source "${SCRIPT_DIR}/aid-helper.sh"
 # =============================================================================
 
 AUTH_URL=""
+RESOURCE_URL=""
+API_KEY=""
 SCOPE=""
+CREDENTIAL_TYPE=""
 OUTPUT_FORMAT="text"
 NO_CACHE=false
 QUIET=false
 
 show_help() {
-    echo "Usage: aid-token --auth <url> [options]"
+    echo "Usage: aid-token (--auth <url> | --resource <url>) [options]"
     echo ""
     echo "Request an API token from a 23blocks Auth server using Agent Identity."
     echo ""
-    echo "Required:"
+    echo "One of --auth or --resource is required:"
     echo "  --auth, -a URL          Auth server URL (e.g., https://auth.23blocks.com/acme)"
+    echo "  --resource, -r URL      Protected resource URL — auth server is discovered via RFC 9728"
     echo ""
     echo "Options:"
+    echo "  --api-key, -k KEY       API key (X-Api-Key header)"
     echo "  --scope, -s SCOPES      Space-separated scopes (default: all registered scopes)"
+    echo "  --credential-type, -c TYPE  Credential format: access_token (JWT, default) or api_key (opaque)"
     echo "  --json, -j              Output as JSON"
     echo "  --no-cache              Skip token cache, always request new token"
     echo "  --quiet, -q             Output only the access token (for piping)"
@@ -67,8 +73,20 @@ while [[ $# -gt 0 ]]; do
             AUTH_URL="$2"
             shift 2
             ;;
+        --resource|-r)
+            RESOURCE_URL="$2"
+            shift 2
+            ;;
+        --api-key|-k)
+            API_KEY="$2"
+            shift 2
+            ;;
         --scope|-s)
             SCOPE="$2"
+            shift 2
+            ;;
+        --credential-type|-c)
+            CREDENTIAL_TYPE="$2"
             shift 2
             ;;
         --json|-j)
@@ -95,10 +113,26 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ -z "$AUTH_URL" ]; then
-    echo "Error: --auth is required" >&2
+if [ -z "$AUTH_URL" ] && [ -z "$RESOURCE_URL" ]; then
+    echo "Error: one of --auth or --resource is required" >&2
     echo "Run 'aid-token --help' for usage." >&2
     exit 1
+fi
+
+# Validate --credential-type value if provided
+if [ -n "$CREDENTIAL_TYPE" ] && [ "$CREDENTIAL_TYPE" != "access_token" ] && [ "$CREDENTIAL_TYPE" != "api_key" ]; then
+    echo "Error: --credential-type must be 'access_token' or 'api_key', got '${CREDENTIAL_TYPE}'" >&2
+    exit 1
+fi
+
+# Resolve --resource into AUTH_URL via RFC 9728 / RFC 8414 discovery
+if [ -z "$AUTH_URL" ]; then
+    AUTH_URL=$(discover_from_resource "$RESOURCE_URL" 2>/dev/null | jq -r '.auth_server // empty')
+    if [ -z "$AUTH_URL" ]; then
+        echo "Error: failed to discover an AID-enabled auth server from ${RESOURCE_URL}" >&2
+        echo "  Try 'aid-discover --resource ${RESOURCE_URL}' for details." >&2
+        exit 1
+    fi
 fi
 
 # =============================================================================
@@ -129,9 +163,11 @@ fi
 AID_CACHE_DIR="${AMP_DIR}/tokens"
 mkdir -p "$AID_CACHE_DIR"
 
-# Derive cache key from auth URL
+# Derive cache key from auth URL + credential_type (so api_key and access_token
+# requests for the same auth server don't collide on disk).
 cache_key_for_auth() {
-    echo "$AUTH_URL" | shasum -a 256 | cut -c1-16
+    local ct="${CREDENTIAL_TYPE:-access_token}"
+    echo "${AUTH_URL}|${ct}" | shasum -a 256 | cut -c1-16
 }
 
 check_cache() {
@@ -153,6 +189,14 @@ check_cache() {
             local cached_scope
             cached_scope=$(jq -r '.scope // ""' "$cache_file" 2>/dev/null)
             if [ "$cached_scope" != "$SCOPE" ]; then
+                return 1
+            fi
+        fi
+        # Check if credential_type matches (api_key tokens are never valid as access_token, vice versa)
+        if [ -n "$CREDENTIAL_TYPE" ]; then
+            local cached_ct
+            cached_ct=$(jq -r '.credential_type // "access_token"' "$cache_file" 2>/dev/null)
+            if [ "$cached_ct" != "$CREDENTIAL_TYPE" ]; then
                 return 1
             fi
         fi
@@ -197,11 +241,12 @@ if [ "$NO_CACHE" = false ]; then
                 echo "✅ Token (cached)"
                 echo ""
                 echo "  Auth:       ${AUTH_URL}"
+                echo "  Type:       $(echo "$cached_response" | jq -r '.credential_type // "access_token"')"
                 echo "  Scope:      $(echo "$cached_response" | jq -r '.scope // "all"')"
                 echo "  Expires in: $(echo "$cached_response" | jq -r '.expires_in // "?"')s"
                 echo "  Agent:      $(echo "$cached_response" | jq -r '.agent_address // "?"')"
                 echo ""
-                echo "  Access Token:"
+                echo "  Credential:"
                 echo "  $(echo "$cached_response" | jq -r '.access_token')"
                 ;;
         esac
@@ -233,9 +278,9 @@ AGENT_IDENTITY=$(jq -n \
         fingerprint: $fingerprint,
         issued_at: $issued_at,
         expires_at: $expires_at
-    }')
+    }' | jq -cS .)
 
-# Sign the Agent Identity (sign everything except the signature field itself)
+# Sign the canonical JSON (sorted keys, compact, no whitespace)
 IDENTITY_SIGNATURE=$(sign_message "$AGENT_IDENTITY")
 if [ -z "$IDENTITY_SIGNATURE" ]; then
     echo "Error: Failed to sign Agent Identity" >&2
@@ -249,13 +294,27 @@ SIGNED_IDENTITY=$(echo "$AGENT_IDENTITY" | jq --arg sig "$IDENTITY_SIGNATURE" '.
 AGENT_IDENTITY_B64=$(echo -n "$SIGNED_IDENTITY" | base64 | tr '+/' '-_' | tr -d '=\n')
 
 # =============================================================================
+# Resolve registration file (needed for token_endpoint and oidc_issuer)
+# =============================================================================
+
+AID_REG_DIR="${AMP_DIR}/api_registrations"
+AUTH_HOST=$(echo "$AUTH_URL" | sed -E 's|https?://||' | cut -d/ -f1)
+REG_FILE="${AID_REG_DIR}/${AUTH_HOST}.json"
+
+# =============================================================================
 # Build Proof of Possession
 # =============================================================================
 
 TIMESTAMP=$(date +%s)
 
-# The issuer is the auth server URL
-AUTH_ISSUER="$AUTH_URL"
+# The issuer for the proof: check registration file for oidc_issuer, fall back to AUTH_URL
+AUTH_ISSUER=""
+if [ -f "$REG_FILE" ]; then
+    AUTH_ISSUER=$(jq -r '.oidc_issuer // empty' "$REG_FILE" 2>/dev/null)
+fi
+if [ -z "$AUTH_ISSUER" ]; then
+    AUTH_ISSUER="$AUTH_URL"
+fi
 
 SIGN_INPUT="aid-token-exchange
 ${TIMESTAMP}
@@ -281,8 +340,14 @@ PROOF_B64=$(
 # Token Request
 # =============================================================================
 
-# Build the OAuth token endpoint URL
-TOKEN_URL="${AUTH_URL}/oauth/token"
+# Resolve the token endpoint URL from registration file, fall back to AUTH_URL
+TOKEN_URL=""
+if [ -f "$REG_FILE" ]; then
+    TOKEN_URL=$(jq -r '.token_endpoint // empty' "$REG_FILE" 2>/dev/null)
+fi
+if [ -z "$TOKEN_URL" ]; then
+    TOKEN_URL="${AUTH_URL}/oauth/token"
+fi
 
 # Build form body
 FORM_DATA="grant_type=urn%3Aaid%3Aagent-identity&agent_identity=${AGENT_IDENTITY_B64}&proof=${PROOF_B64}"
@@ -290,11 +355,15 @@ if [ -n "$SCOPE" ]; then
     ENCODED_SCOPE=$(echo -n "$SCOPE" | jq -sRr @uri)
     FORM_DATA="${FORM_DATA}&scope=${ENCODED_SCOPE}"
 fi
+if [ -n "$CREDENTIAL_TYPE" ]; then
+    FORM_DATA="${FORM_DATA}&requested_credential_type=${CREDENTIAL_TYPE}"
+fi
 
 # Make the request
 HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" \
     -X POST "$TOKEN_URL" \
     -H "Content-Type: application/x-www-form-urlencoded" \
+    ${API_KEY:+-H "X-Api-Key: ${API_KEY}"} \
     -d "$FORM_DATA" \
     --connect-timeout 10 \
     --max-time 30 \

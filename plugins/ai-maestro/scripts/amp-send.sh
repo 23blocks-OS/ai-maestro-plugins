@@ -36,6 +36,8 @@ source "${SCRIPT_DIR}/amp-helper.sh"
 RECIPIENT=""
 SUBJECT=""
 MESSAGE=""
+BODY_FILE=""
+BODY_STDIN=false
 PRIORITY="normal"
 TYPE="notification"
 REPLY_TO=""
@@ -45,15 +47,20 @@ ATTACH_FILES=()
 
 show_help() {
     echo "Usage: amp-send <recipient> <subject> <message> [options]"
+    echo "       amp-send <recipient> <subject> --body-file PATH [options]"
+    echo "       amp-send <recipient> <subject> --body-stdin [options]"
     echo ""
     echo "Send a message to another agent."
     echo ""
     echo "Arguments:"
     echo "  recipient   Agent address (e.g., alice, bob@tenant.provider)"
     echo "  subject     Message subject"
-    echo "  message     Message body"
+    echo "  message     Message body (omit if using --body-file or --body-stdin)"
     echo ""
     echo "Options:"
+    echo "  --body-file PATH          Read message body from a file (avoids shell escaping"
+    echo "                              issues with backticks, code blocks, box-drawing chars)"
+    echo "  --body-stdin              Read message body from stdin"
     echo "  --priority, -p PRIORITY   low|normal|high|urgent (default: normal)"
     echo "  --type, -t TYPE           request|response|notification|task|status (default: notification)"
     echo "  --reply-to, -r ID         Message ID this is replying to"
@@ -73,6 +80,8 @@ show_help() {
     echo "  amp-send alice \"Hello\" \"How are you?\""
     echo "  amp-send backend-api \"Deploy\" \"Ready\" --priority high"
     echo "  amp-send bob@acme.crabmail.ai \"Help\" \"Need assistance\" --type request"
+    echo "  amp-send alice \"Report\" --body-file report.md"
+    echo "  cat reply.md | amp-send alice \"Reply\" --body-stdin"
 }
 
 # Parse positional and optional arguments
@@ -103,6 +112,14 @@ while [[ $# -gt 0 ]]; do
             ATTACH_FILES+=("$2")
             shift 2
             ;;
+        --body-file)
+            BODY_FILE="$2"
+            shift 2
+            ;;
+        --body-stdin)
+            BODY_STDIN=true
+            shift
+            ;;
         --id)
             shift 2  # Already handled in pre-source parsing
             ;;
@@ -122,9 +139,19 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Check positional arguments
-if [ ${#POSITIONAL[@]} -lt 3 ]; then
-    echo "Error: Missing required arguments."
+# Resolve body source: positional, file, or stdin (mutually exclusive)
+_body_sources=0
+[ -n "$BODY_FILE" ] && _body_sources=$((_body_sources + 1))
+[ "$BODY_STDIN" = true ] && _body_sources=$((_body_sources + 1))
+[ ${#POSITIONAL[@]} -ge 3 ] && _body_sources=$((_body_sources + 1))
+
+if [ $_body_sources -gt 1 ]; then
+    echo "Error: provide message body via exactly one of: positional arg, --body-file, --body-stdin"
+    exit 1
+fi
+
+if [ ${#POSITIONAL[@]} -lt 2 ]; then
+    echo "Error: Missing recipient or subject."
     echo ""
     show_help
     exit 1
@@ -132,7 +159,23 @@ fi
 
 RECIPIENT="${POSITIONAL[0]}"
 SUBJECT="${POSITIONAL[1]}"
-MESSAGE="${POSITIONAL[2]}"
+
+if [ -n "$BODY_FILE" ]; then
+    if [ ! -f "$BODY_FILE" ]; then
+        echo "Error: --body-file path not found: $BODY_FILE"
+        exit 1
+    fi
+    MESSAGE=$(cat "$BODY_FILE")
+elif [ "$BODY_STDIN" = true ]; then
+    MESSAGE=$(cat)
+elif [ ${#POSITIONAL[@]} -ge 3 ]; then
+    MESSAGE="${POSITIONAL[2]}"
+else
+    echo "Error: Missing message body. Provide as positional arg, --body-file PATH, or --body-stdin."
+    echo ""
+    show_help
+    exit 1
+fi
 
 # Validate priority
 if [[ ! "$PRIORITY" =~ ^(low|normal|high|urgent)$ ]]; then

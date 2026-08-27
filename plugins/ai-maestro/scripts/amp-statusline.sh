@@ -15,6 +15,7 @@
 # Agent resolution order:
 #   1. AMP_AGENT_ID env var (explicit UUID)
 #   2. CLAUDE_AGENT_NAME env var (AI Maestro sets this)
+#   2.5 Claude Code native session_name (`claude --name`), if it maps to an agent
 #   3. tmux session name
 #   4. Working directory → AI Maestro API lookup
 #   5. Working directory → walk up to .claude/settings.local.json for
@@ -101,6 +102,9 @@ MODEL=$(echo "$input" | jq -r '.model.display_name // "?"')
 PCT=$(echo "$input" | jq -r '.context_window.used_percentage // 0' | cut -d. -f1)
 COST=$(echo "$input" | jq -r '.cost.total_cost_usd // 0')
 CWD=$(echo "$input" | jq -r '.workspace.current_dir // empty')
+# Claude Code's native session name (set by `claude --name` / `/rename`). Present
+# only when a custom or AI-generated title exists; used below as an identity hint.
+SESSION_NAME=$(echo "$input" | jq -r '.session_name // empty')
 
 # --- Resolve AMP agent ---
 AGENTS_BASE="${HOME}/.agent-messaging/agents"
@@ -119,18 +123,35 @@ if [ -n "${AMP_AGENT_ID:-}" ]; then
 elif [ -n "${CLAUDE_AGENT_NAME:-}" ]; then
     AGENT_NAME="$CLAUDE_AGENT_NAME"
 
+# Priority 2.5: Claude Code's native session name (set by `claude --name`, as
+# AI Maestro does when launching an agent). Trust it ONLY when it maps to a known
+# agent — an AI-generated session title must not shadow the cwd/hint fallbacks.
+elif [ -n "$SESSION_NAME" ] && [ -f "$INDEX_FILE" ] && \
+     [ -n "$(jq -r --arg n "$SESSION_NAME" '.[$n] // empty' "$INDEX_FILE" 2>/dev/null)" ]; then
+    AGENT_NAME="$SESSION_NAME"
+
 # Priority 3: tmux session name
 elif [ -n "${TMUX:-}" ]; then
     AGENT_NAME=$(tmux display-message -p '#S' 2>/dev/null)
 
 # Priority 4: Working directory → AI Maestro API
 elif [ -n "$CWD" ]; then
+    # Match by working directory, but ONLY when it uniquely identifies one agent.
+    # Many agents can share a dir, or claim a broad one ($HOME), so taking the first
+    # match silently showed the WRONG identity (every session under $HOME becoming
+    # "piano-instructor", or a dev dir picking a random one of the agents there).
+    # Pick the MOST SPECIFIC match (longest workingDirectory); if several tie, the cwd
+    # is ambiguous, so show nothing rather than a wrong name.
     MAESTRO_AGENT=$(curl -s --connect-timeout 1 "${AMP_MAESTRO_URL:-http://localhost:23000}/api/agents" 2>/dev/null | \
         jq -r --arg cwd "$CWD" '
-            .agents[] |
-            select((.workingDirectory // .session.workingDirectory // "") as $wd |
-                $wd != "" and ($cwd == $wd or ($cwd | startswith($wd + "/"))))
-            | .name' 2>/dev/null | head -1)
+            [ .agents[]
+              | (.workingDirectory // .session.workingDirectory // "") as $wd
+              | select($wd != "" and ($cwd == $wd or ($cwd | startswith($wd + "/"))))
+              | {name: .name, len: ($wd | length)} ]
+            | (map(.len) | max) as $mx
+            | map(select(.len == $mx))
+            | if length == 1 then .[0].name else empty end
+        ' 2>/dev/null)
     [ -n "$MAESTRO_AGENT" ] && AGENT_NAME="$MAESTRO_AGENT"
 fi
 
@@ -140,7 +161,10 @@ if [ -z "$AGENT_UUID" ] && [ -z "$AGENT_NAME" ] && [ -n "$CWD" ]; then
     while [ "$_dir" != "/" ] && [ "$_dir" != "$HOME" ]; do
         _settings="${_dir}/.claude/settings.local.json"
         if [ -f "$_settings" ]; then
-            _hint=$(grep -o 'CLAUDE_AGENT_NAME=[a-zA-Z0-9_-]*' "$_settings" 2>/dev/null | head -1 | cut -d= -f2)
+            # Read the REAL env hint, not any occurrence of the string in the file.
+            # grep-ing the raw file matched permission allow-list entries like
+            # "Bash(CLAUDE_AGENT_NAME=foo amp-send.sh:*)" and showed a bogus identity.
+            _hint=$(jq -r '(.env.CLAUDE_AGENT_NAME // .env.AIM_AGENT_NAME // empty)' "$_settings" 2>/dev/null)
             if [ -n "$_hint" ]; then
                 AGENT_NAME="$_hint"
                 break
@@ -175,6 +199,21 @@ if [ -n "$AGENT_UUID" ]; then
             STATUS=$(jq -r '.local.status // .metadata.status // "unread"' "$msg_file" 2>/dev/null)
             [ "$STATUS" = "unread" ] && UNREAD=$((UNREAD + 1))
         done < <(find "$INBOX_DIR" -name '*.json' -type f -print0 2>/dev/null)
+    fi
+fi
+
+# Report this session's cumulative cost to AI Maestro so the agent's "API Cost"
+# metric reflects real usage. Best-effort, backgrounded, never blocks the render.
+# Only PATCH when the cost has GROWN (monotonic): avoids spamming the API every
+# render and avoids the value dipping to ~0 when a new session starts. (Lifetime
+# accumulation across sessions is a later OTLP concern.)
+if [ -n "$AGENT_UUID" ] && [ -n "$COST" ]; then
+    _cost_cache="${AGENTS_BASE}/${AGENT_UUID}/.last-cost"
+    _last_cost=$(cat "$_cost_cache" 2>/dev/null || echo 0)
+    if awk -v c="$COST" -v l="$_last_cost" 'BEGIN{exit !(c+0 > l+0)}' 2>/dev/null; then
+        echo "$COST" > "$_cost_cache" 2>/dev/null
+        curl -s -m 2 -X PATCH "${AMP_MAESTRO_URL:-http://localhost:23000}/api/agents/${AGENT_UUID}/metrics" \
+            -H 'Content-Type: application/json' -d "{\"estimatedCost\": ${COST}}" >/dev/null 2>&1 &
     fi
 fi
 
