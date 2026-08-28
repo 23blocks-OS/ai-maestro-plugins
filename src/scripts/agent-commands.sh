@@ -401,7 +401,13 @@ HELP
 
     # Validate program - must be in whitelist
     local allowed_programs="claude-code claude codex aider cursor gemini opencode none terminal"
-    local program_lower="${program,,}"  # lowercase
+    # Portable lowercase — see agent-helper.sh. On macOS's bash 3.2 the bash-4
+    # ${var,,} form errored, program_lower stayed empty, the whitelist test
+    # failed, and `aimaestro-agent.sh create` aborted with "Invalid program:
+    # claude" for a perfectly valid program. This is the line that broke agent
+    # creation on the MacBook.
+    local program_lower
+    program_lower=$(printf '%s' "$program" | tr '[:upper:]' '[:lower:]')
     if [[ ! " $allowed_programs " =~ [[:space:]]"${program_lower}"[[:space:]] ]]; then
         print_error "Invalid program: $program"
         print_error "Allowed programs: $allowed_programs"

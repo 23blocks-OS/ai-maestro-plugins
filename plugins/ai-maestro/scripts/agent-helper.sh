@@ -787,7 +787,12 @@ check_agent_exists() {
     response=$(_api_request "${api_base}/api/agents?q=${encoded_name}" "Search agents") || return 1
 
     # Check if any agent matches the name (case-insensitive)
-    local name_lower="${name,,}"
+    # Portable lowercase. ${var,,} is bash 4+; macOS ships bash 3.2.57, where
+    # it is a "bad substitution" runtime error — the function then returns
+    # non-zero, so the caller reads it as "no collision" and the duplicate-name
+    # check silently never fired on macOS.
+    local name_lower
+    name_lower=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')
     local found
     found=$(echo "$response" | jq -r --arg n "$name_lower" '
         .agents // [] | map(select(
