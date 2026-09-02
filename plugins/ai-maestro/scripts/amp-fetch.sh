@@ -17,11 +17,23 @@
 
 set -e
 
-# Pre-source: extract --id to set agent identity before helper resolves it
+# Pre-source: extract --id to set agent identity before helper resolves it.
+#
+# An explicit --id is the caller naming a specific agent, so it must beat an
+# inherited AMP_DIR. AI Maestro exports AMP_DIR into every agent session, and
+# the helper skips its whole resolution block when AMP_DIR is already set — so
+# `--id <other-agent>` run from inside an agent session was silently ignored
+# and you read your OWN mailbox believing it was theirs. Unsetting AMP_DIR here
+# hands resolution back to the helper, which then honours CLAUDE_AGENT_ID.
+#
+# AMP_EXPLICIT_ID additionally tells load_config that CLAUDE_AGENT_NAME belongs
+# to the CALLER and says nothing about the agent being opened.
 _amp_prev=""
 for _amp_arg in "$@"; do
     if [ "$_amp_prev" = "--id" ]; then
         export CLAUDE_AGENT_ID="$_amp_arg"
+        export AMP_EXPLICIT_ID="$_amp_arg"
+        unset AMP_DIR
         break
     fi
     _amp_prev="$_amp_arg"
