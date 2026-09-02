@@ -686,23 +686,40 @@ load_config() {
         return 1
     fi
 
-    # ── Name & address mismatch detection ──
-    # If the config name OR address doesn't match the expected agent name,
-    # the config was likely poisoned by a bad amp-init (e.g. git repo name
-    # fallback). Auto-fix: update the config to match the authoritative name.
+    # ── Name & address mismatch detection (REPORT ONLY) ──
+    # A config whose name or address disagrees with the agent it belongs to was
+    # probably written by a bad amp-init (e.g. the git-repo-name fallback).
+    # We say so. We do NOT fix it here.
     #
-    # The expected name comes from (in priority order):
-    #   1. CLAUDE_AGENT_NAME env var (set by AI Maestro)
-    #   2. Directory basename (only if it's NOT a UUID — UUID dirs are stable,
-    #      the name lives in config.json)
-    local _expected_name _addr_local_part _needs_fix=false
+    # This function runs on every READ path — amp-inbox, amp-read, amp-status.
+    # It used to repair the config in place, taking CLAUDE_AGENT_NAME as
+    # authoritative regardless of which directory was actually open. Run as
+    # `amp-inbox --id <other-agent>` from inside an agent session, that rewrote
+    # the TARGET's name and address to the CALLER's, and — because the repair
+    # called save_config with three arguments, omitting agent_id — dropped the
+    # target's id from its config entirely.
+    #
+    # The damage scaled with diligence: an Agents Manager sweeping the fleet to
+    # check for identity corruption would have renamed every agent it inspected
+    # to itself. A command that observes must not mutate what it observes, and
+    # this one could not even be audited around, because the audit was the
+    # thing that caused it.
+    #
+    # Repair now happens only where writing is the declared intent: amp-init,
+    # which sets AMP_ALLOW_CONFIG_REPAIR=1.
+    local _expected_name _addr_local_part
     _expected_name=""
 
-    # If CLAUDE_AGENT_NAME is set, it's authoritative
-    if [ -n "${CLAUDE_AGENT_NAME:-}" ]; then
+    if [ -n "${AMP_EXPLICIT_ID:-}" ]; then
+        # The caller named a specific agent with --id. CLAUDE_AGENT_NAME is the
+        # CALLER's name and says nothing about the target, so there is nothing
+        # to compare against and nothing to warn about.
+        _expected_name=""
+    elif [ -n "${CLAUDE_AGENT_NAME:-}" ]; then
         _expected_name="${CLAUDE_AGENT_NAME}"
     else
-        # Use directory basename only if it doesn't look like a UUID
+        # Directory basename, but only if it is not a UUID — UUID dirs are
+        # stable and the name lives in config.json.
         local _dir_basename
         _dir_basename=$(basename "$AMP_DIR")
         if [[ ! "$_dir_basename" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
@@ -711,23 +728,33 @@ load_config() {
     fi
 
     _addr_local_part="${AMP_ADDRESS%%@*}"
+    AMP_CONFIG_MISMATCH=""
 
     if [ -n "$_expected_name" ]; then
         if [ "$AMP_AGENT_NAME" != "$_expected_name" ]; then
-            echo "  ⚠️  AMP name mismatch: config='${AMP_AGENT_NAME}' expected='${_expected_name}'" >&2
-            _needs_fix=true
+            AMP_CONFIG_MISMATCH="name: config='${AMP_AGENT_NAME}' expected='${_expected_name}'"
         elif [ "$_addr_local_part" != "$_expected_name" ]; then
-            echo "  ⚠️  AMP address mismatch: address='${AMP_ADDRESS}' expected='${_expected_name}@...'" >&2
-            _needs_fix=true
+            AMP_CONFIG_MISMATCH="address: address='${AMP_ADDRESS}' expected='${_expected_name}@...'"
         fi
+    fi
 
-        if [ "$_needs_fix" = true ]; then
-            echo "  Auto-fixing config to match agent identity..." >&2
-            local _new_address
-            _new_address=$(save_config "$_expected_name" "$AMP_TENANT" "$AMP_FINGERPRINT")
+    if [ -n "$AMP_CONFIG_MISMATCH" ]; then
+        if [ "${AMP_ALLOW_CONFIG_REPAIR:-}" = "1" ]; then
+            # Explicit write intent (amp-init). Preserve the agent id — dropping
+            # it is what made the old auto-fix destructive rather than merely
+            # wrong.
+            local _existing_id _new_address
+            _existing_id=$(jq -r '.agent.id // empty' "${AMP_CONFIG}" 2>/dev/null)
+            echo "  Repairing config (${AMP_CONFIG_MISMATCH})..." >&2
+            _new_address=$(save_config "$_expected_name" "$AMP_TENANT" "$AMP_FINGERPRINT" "$_existing_id")
             AMP_AGENT_NAME="$_expected_name"
             AMP_ADDRESS="$_new_address"
-            echo "  ✅ Fixed: name='${AMP_AGENT_NAME}' address='${AMP_ADDRESS}'" >&2
+            AMP_CONFIG_MISMATCH=""
+            echo "  Repaired: name='${AMP_AGENT_NAME}' address='${AMP_ADDRESS}'" >&2
+        else
+            echo "  AMP config mismatch (${AMP_CONFIG_MISMATCH})" >&2
+            echo "  Not repairing: this is a read path and it must not rewrite identity." >&2
+            echo "  To fix deliberately: amp-init.sh --name '${_expected_name}' --force" >&2
         fi
     fi
 
@@ -803,6 +830,22 @@ generate_keypair() {
     fingerprint=$($OPENSSL_BIN pkey -in "${private_key}" -pubout -outform DER 2>/dev/null | \
                   $OPENSSL_BIN dgst -sha256 -binary | base64)
 
+    echo "SHA256:${fingerprint}"
+}
+
+# Fingerprint of an EXISTING private key, without touching it.
+#
+# amp-init needs this when it adopts a half-built identity: regenerating the
+# keypair there would invalidate every provider registration the agent holds,
+# which is a far worse outcome than the incomplete config it was called to fix.
+keypair_fingerprint() {
+    require_openssl
+    local private_key="$1"
+    [ -f "$private_key" ] || return 1
+    local fingerprint
+    fingerprint=$($OPENSSL_BIN pkey -in "${private_key}" -pubout -outform DER 2>/dev/null | \
+                  $OPENSSL_BIN dgst -sha256 -binary | base64)
+    [ -n "$fingerprint" ] || return 1
     echo "SHA256:${fingerprint}"
 }
 

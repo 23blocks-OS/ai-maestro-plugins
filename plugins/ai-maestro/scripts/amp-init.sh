@@ -24,6 +24,7 @@ NAME=""
 TENANT=""
 AUTO_DETECT=false
 FORCE=false
+REPAIR_CONFIG=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -43,6 +44,10 @@ while [[ $# -gt 0 ]]; do
             FORCE=true
             shift
             ;;
+        --repair-config)
+            REPAIR_CONFIG=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: amp-init [options]"
             echo ""
@@ -52,7 +57,10 @@ while [[ $# -gt 0 ]]; do
             echo "  --name, -n NAME      Agent name (e.g., backend-api)"
             echo "  --tenant, -t TENANT  Organization/tenant (auto-detected)"
             echo "  --auto, -a           Auto-detect name from environment"
-            echo "  --force, -f          Overwrite existing configuration"
+            echo "  --force, -f          Overwrite existing configuration (NEW KEYS)"
+            echo "  --repair-config      Fix a name/address mismatch in place."
+            echo "                       Keeps the existing keys, agent id and"
+            echo "                       registrations — unlike --force."
             echo "  --help, -h           Show this help"
             echo ""
             echo "Examples:"
@@ -91,6 +99,36 @@ if [ -z "$TENANT" ]; then
         echo "   3. Run 'amp-init --force' to reinitialize"
         echo ""
     fi
+fi
+
+# ── Explicit config repair ───────────────────────────────────────────────────
+# The read paths (amp-inbox, amp-read, amp-status) report a name/address
+# mismatch and refuse to touch it: a command that observes must not mutate what
+# it observes. This is the declared-intent counterpart — it is the only place
+# that rewrites an existing identity, and it is narrow on purpose.
+#
+# --force is not the answer to a mismatched name: it generates NEW KEYS, which
+# invalidates every provider registration the agent holds. This fixes the name
+# and address and leaves keys, agent id and registrations alone.
+if [ "$REPAIR_CONFIG" = true ]; then
+    if ! is_initialized; then
+        echo "Error: nothing to repair — AMP is not initialized here." >&2
+        echo "Run: amp-init --name <your-agent-name>" >&2
+        exit 1
+    fi
+    echo "Checking ${AMP_CONFIG}..."
+    AMP_ALLOW_CONFIG_REPAIR=1 load_config
+    if [ -n "${AMP_CONFIG_MISMATCH:-}" ]; then
+        echo "Error: could not repair config (${AMP_CONFIG_MISMATCH})" >&2
+        exit 1
+    fi
+    echo ""
+    echo "  Agent:   ${AMP_AGENT_NAME}"
+    echo "  Address: ${AMP_ADDRESS}"
+    echo "  Id:      $(jq -r '.agent.id // "(none)"' "${AMP_CONFIG}" 2>/dev/null)"
+    echo ""
+    echo "Config is consistent. Keys and registrations untouched."
+    exit 0
 fi
 
 # Check if already initialized
@@ -163,6 +201,32 @@ if is_initialized && [ "$FORCE" = true ]; then
     fi
 fi
 
+# ── Adopt this name's existing identity rather than creating a rival ────────
+# Without this, any re-run that was not --force minted a NEW uuid and a NEW
+# directory for a name that already had one: the index entry moved to the new
+# uuid and the original was orphaned but still on disk, which is where
+# duplicate agent names come from. A re-run of init on a half-built identity
+# should COMPLETE it, not race it.
+if [ -z "$AGENT_UUID" ]; then
+    _adopt_uuid=$(_index_lookup "$NAME" 2>/dev/null) || true
+    if [ -n "${_adopt_uuid:-}" ] && [ -d "${AMP_AGENTS_BASE}/${_adopt_uuid}" ]; then
+        if [ -f "${AMP_AGENTS_BASE}/${_adopt_uuid}/config.json" ] \
+           && [ -f "${AMP_AGENTS_BASE}/${_adopt_uuid}/keys/private.pem" ] \
+           && [ "$FORCE" != true ]; then
+            echo ""
+            echo "AMP is already initialized for '${NAME}'."
+            echo "  Agent ID: ${_adopt_uuid}"
+            echo "  Directory: ${AMP_AGENTS_BASE}/${_adopt_uuid}"
+            echo ""
+            echo "Use --force to reinitialize (will generate new keys),"
+            echo "or --repair-config to fix a name/address mismatch in place."
+            exit 0
+        fi
+        AGENT_UUID="$_adopt_uuid"
+        echo "  Completing existing identity for '${NAME}': ${AGENT_UUID}"
+    fi
+fi
+
 # Generate client-side UUID for new agents
 if [ -z "$AGENT_UUID" ]; then
     AGENT_UUID=$(generate_uuid)
@@ -192,6 +256,12 @@ if [ "$FORCE" = true ] && [ -f "${AMP_KEYS_DIR}/private.pem" ]; then
     trap 'rm -rf "$TEMP_KEYS_DIR"' EXIT
     echo "  Generating new Ed25519 keypair (rotation mode)..."
     FINGERPRINT=$(generate_keypair_to "$TEMP_KEYS_DIR")
+elif [ -f "${AMP_KEYS_DIR}/private.pem" ]; then
+    # Completing an adopted identity that already has keys. Regenerating here
+    # would invalidate every registration made with the old key, so keep them —
+    # rotation requires the explicit --force.
+    echo "  Reusing existing Ed25519 keypair..."
+    FINGERPRINT=$(keypair_fingerprint "${AMP_KEYS_DIR}/private.pem")
 else
     echo "  Generating Ed25519 keypair..."
     FINGERPRINT=$(generate_keypair)
