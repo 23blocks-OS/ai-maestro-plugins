@@ -86,6 +86,11 @@ show_help() {
     echo "Options:"
     echo "  --name, -n NAME           Agent name (default: from local config)"
     echo "  --api-url, -a URL         Custom API URL (for self-hosted providers)"
+    echo "                            MUST include the API base path — the script"
+    echo "                            posts to {API_URL}/v1/register, so"
+    echo "                            http://localhost:23000 gives a 404 that reads"
+    echo "                            like the provider is down."
+    echo "                            Correct: http://localhost:23000/api"
     echo "  --force, -f               Re-register even if already registered"
     echo "  --id UUID                 Operate as this agent (UUID from config.json)"
     echo "  --help, -h                Show this help"
@@ -99,6 +104,10 @@ show_help() {
     echo ""
     echo "  # Register with custom name"
     echo "  amp-register -p crabmail.ai -k uk_xxx -n backend-api"
+    echo ""
+    echo "  # Self-hosted AI Maestro — note the /api on the URL"
+    echo "  amp-register --provider aimaestro.local --tenant myorg \\"
+    echo "               --api-url http://localhost:23000/api"
     echo ""
     echo "  # Legacy: Provider without user key auth"
     echo "  amp-register -p myprovider.com -t mycompany"
@@ -340,6 +349,57 @@ if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
 
     # Secure the registration file (contains API key)
     chmod 600 "$REG_FILE"
+
+    # Prove it actually landed before announcing success.
+    #
+    # Reported from the field: a first invocation printed "Updating identity
+    # file..." and exited 0 having persisted NOTHING — registrations/ stayed
+    # empty, and only a second run with --force worked. `set -e` does not catch
+    # this, because the failure is a jq that writes an empty file rather than a
+    # command that returns non-zero. An exit code that does not track whether
+    # the work happened is worse than no exit code at all: it makes the caller
+    # confident about something nobody checked.
+    if [ ! -s "$REG_FILE" ] || ! jq -e '.apiKey' "$REG_FILE" >/dev/null 2>&1; then
+        echo "Error: registration response was accepted but could not be persisted to" >&2
+        echo "  ${REG_FILE}" >&2
+        echo "Nothing has been saved. Re-run; if it recurs, check disk permissions on ${AMP_REGISTRATIONS_DIR}." >&2
+        exit 1
+    fi
+
+    # ── Patch config.json so the agent's own identity reflects the registration ──
+    #
+    # Reported from the field: registration wrote registrations/<provider>.json
+    # and IDENTITY.md but never touched config.json, so every tool that reads
+    # .agent.address kept showing the PRE-registration identity — amp-statusline,
+    # amp-identity and amp-inbox all reported @default.local for an agent that
+    # had registered successfully. A correctly registered agent looked
+    # unregistered everywhere a human would think to check.
+    #
+    # Patched surgically rather than through save_config, which rebuilds the
+    # object and would drop agent.id, fingerprint and createdAt — the exact
+    # class of damage that made the old load_config auto-fix destructive.
+    #
+    # Note for multi-provider agents: config.json carries ONE address, so this
+    # reflects the most recent registration. registrations/ keeps the full
+    # per-provider detail, and that is the authoritative list.
+    if [ -f "$AMP_CONFIG" ]; then
+        _cfg_tmp=$(mktemp)
+        if jq \
+            --arg tenant "$TENANT" \
+            --arg address "$ADDRESS" \
+            --arg domain "$PROVIDER_LOWER" \
+            --arg maestro_url "$API_URL" \
+            '.agent.tenant = $tenant
+             | .agent.address = $address
+             | .provider = ((.provider // {}) + {domain: $domain, maestro_url: $maestro_url})' \
+            "$AMP_CONFIG" > "$_cfg_tmp" 2>/dev/null && [ -s "$_cfg_tmp" ]; then
+            mv "$_cfg_tmp" "$AMP_CONFIG"
+            echo "  Updated config.json: ${ADDRESS}"
+        else
+            rm -f "$_cfg_tmp"
+            echo "  Warning: could not update config.json; tools may still show the old address" >&2
+        fi
+    fi
 
     # Update IDENTITY.md with new address
     echo "Updating identity file..."
