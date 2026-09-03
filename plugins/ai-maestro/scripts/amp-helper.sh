@@ -196,8 +196,27 @@ if [ -z "${AMP_DIR:-}" ]; then
         fi
         if [ -n "$_amp_hint" ]; then
             _amp_uuid=$(_index_lookup "$_amp_hint" 2>/dev/null) || true
-            AMP_DIR="${AMP_AGENTS_BASE}/${_amp_uuid:-$_amp_hint}"
-            _amp_resolved=true
+            # The cwd hint is an INFERENCE about which agent this directory
+            # belongs to. It is not a declaration that the agent has an identity
+            # in THIS home, and it must not be treated as licence to create one.
+            #
+            # Before this check, a hint naming an agent with no index entry fell
+            # through to the raw NAME path, and the auto-create below then
+            # manufactured an empty identity shell — keys/, messages/,
+            # registrations/, no config. Reproduced from a clean home: a single
+            # `amp-init --name foo` run inside a project whose
+            # .claude/settings.local.json names a different agent produced TWO
+            # directories, the real uuid one and a stray shell for the unrelated
+            # name, because amp-init overrides AMP_DIR after the helper has
+            # already created the wrong one.
+            #
+            # Those shells are not harmless: a later name-based resolution can
+            # select the empty shell over the real identity, which is one of the
+            # ways an agent ends up looking unregistered or losing its inbox.
+            if [ -n "$_amp_uuid" ] || [ -d "${AMP_AGENTS_BASE}/${_amp_hint}" ]; then
+                AMP_DIR="${AMP_AGENTS_BASE}/${_amp_uuid:-$_amp_hint}"
+                _amp_resolved=true
+            fi
         fi
         unset _amp_cwd _amp_hint _amp_d _amp_s _amp_uuid
     fi
@@ -240,14 +259,27 @@ if [ -z "${AMP_DIR:-}" ]; then
     fi
 
     if [ "$_amp_resolved" = false ]; then
-        echo "Error: AMP not initialized." >&2
-        echo "Run: amp-init.sh --name <your-agent-name>" >&2
-        exit 1
+        # amp-init's whole job is to create an identity where none exists, so it
+        # cannot require one to already resolve. It sets AMP_ALLOW_UNRESOLVED=1
+        # and overrides AMP_DIR itself once it knows the uuid.
+        #
+        # Without this exemption, init only worked when SOMETHING resolved —
+        # which meant it depended on a cwd inference being made, and on a clean
+        # home with no project hint it would fail outright. That dependency was
+        # invisible because the inference almost always fired.
+        if [ "${AMP_ALLOW_UNRESOLVED:-}" != "1" ]; then
+            echo "Error: AMP not initialized." >&2
+            echo "Run: amp-init.sh --name <your-agent-name>" >&2
+            exit 1
+        fi
+        # Placeholder; the caller is required to replace it before use.
+        AMP_DIR="${AMP_AGENTS_BASE}/.uninitialized"
     fi
     unset _amp_resolved
 
-    # Auto-create per-agent directory if it doesn't exist
-    if [ ! -d "$AMP_DIR" ]; then
+    # Auto-create per-agent directory if it doesn't exist.
+    # Never for the unresolved placeholder — that is the caller's to replace.
+    if [ ! -d "$AMP_DIR" ] && [ "$(basename "$AMP_DIR")" != ".uninitialized" ]; then
         mkdir -p "${AMP_DIR}/keys"
         mkdir -p "${AMP_DIR}/messages/inbox"
         mkdir -p "${AMP_DIR}/messages/sent"

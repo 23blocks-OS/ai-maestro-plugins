@@ -15,6 +15,10 @@
 
 set -e
 
+# Creating an identity is this script's entire purpose, so it must run when none
+# resolves. Everything else should keep failing loudly in that state.
+export AMP_ALLOW_UNRESOLVED=1
+
 # Source helper functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/amp-helper.sh"
