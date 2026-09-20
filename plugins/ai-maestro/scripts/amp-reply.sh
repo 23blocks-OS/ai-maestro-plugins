@@ -48,6 +48,7 @@ BODY_STDIN=false
 PRIORITY=""
 TYPE="response"
 ATTACH_FILES=()
+FORCE=false
 
 show_help() {
     echo "Usage: amp-reply <message-id> <reply-message> [options]"
@@ -67,6 +68,7 @@ show_help() {
     echo "  --priority, -p PRIORITY   Override priority (default: same as original)"
     echo "  --type, -t TYPE           Message type (default: response)"
     echo "  --attach, -a FILE         Attach a file (can be repeated)"
+    echo "  --force, -f               Reply even if this is not the message you last read"
     echo "  --id UUID                 Operate as this agent (UUID from config.json)"
     echo "  --help, -h                Show this help"
     echo ""
@@ -104,6 +106,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --id)
             shift 2  # Already handled in pre-source parsing
+            ;;
+        --force|-f)
+            FORCE=true
+            shift
             ;;
         --help|-h)
             show_help
@@ -186,6 +192,35 @@ ORIGINAL_THREAD=$(echo "$ORIGINAL" | jq -r '.envelope.thread_id // empty')
 # Use original priority if not overridden
 if [ -z "$PRIORITY" ]; then
     PRIORITY="$ORIGINAL_PRIORITY"
+fi
+
+# ── Reply-target safety ──────────────────────────────────────────────────────
+# Enforce the invariant "you reply to the message you just read". If the target
+# is not the last message read in this terminal, refuse — this is the guard
+# against `amp-reply "$(amp-inbox | head -1)" ...` sending your reply to whoever
+# happens to be top of the inbox. See amp-helper.sh for the full story. --force
+# overrides; reading the target first (amp-read <id>) also clears it naturally.
+LAST_READ_ID="$(get_last_read_id)"
+if [ -n "$LAST_READ_ID" ] && [ "$LAST_READ_ID" != "$MESSAGE_ID" ] && [ "$FORCE" != true ]; then
+    LAST_READ_FROM="$(get_last_read_from)"
+    {
+        echo "⚠️  Reply-target mismatch — refusing to send."
+        echo ""
+        echo "  Replying to : ${MESSAGE_ID}"
+        echo "     → sender : ${ORIGINAL_FROM}   (re: ${ORIGINAL_SUBJECT})"
+        echo ""
+        echo "  Last read   : ${LAST_READ_ID}"
+        echo "     from      : ${LAST_READ_FROM}"
+        echo ""
+        echo "  These differ. This is the footgun behind cross-thread misroutes:"
+        echo "  a target built from 'amp-inbox | head -1' aims at whatever is top"
+        echo "  of the inbox, not at the message you meant to answer."
+        echo ""
+        echo "  • To reply to the message you just read: amp-reply ${LAST_READ_ID} \"...\""
+        echo "  • If you really mean ${MESSAGE_ID}: amp-read ${MESSAGE_ID} first,"
+        echo "    or re-run this command with --force."
+    } >&2
+    exit 1
 fi
 
 # Build reply subject

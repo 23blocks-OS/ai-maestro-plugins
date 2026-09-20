@@ -100,6 +100,53 @@ git clone https://github.com/agentmessaging/claude-plugin.git ~/agent-messaging
 export PATH="$HOME/agent-messaging/scripts:$PATH"
 ```
 
+### Required setup for Claude Code: command permissions
+
+**Without this, an agent cannot process its own inbox unattended.**
+
+Claude Code asks for approval every time a Bash command runs unless it is
+allow-listed. That makes AMP unusable for background work: the inbox poll
+injects "check your inbox", the agent tries to run `amp-inbox.sh`, and the run
+stops at an approval dialog nobody is watching. The message stays unread and
+nothing reports a problem.
+
+Add to `~/.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(amp-inbox.sh:*)",
+      "Bash(amp-read.sh:*)",
+      "Bash(amp-reply.sh:*)",
+      "Bash(amp-send.sh:*)",
+      "Bash(amp-download.sh:*)",
+      "Bash(amp-status.sh:*)",
+      "Bash(amp-fetch.sh:*)",
+      "Bash(amp-identity.sh:*)",
+      "Bash(CLAUDE_AGENT_NAME=* amp-inbox.sh:*)",
+      "Bash(CLAUDE_AGENT_NAME=* amp-read.sh:*)",
+      "Bash(CLAUDE_AGENT_NAME=* amp-reply.sh:*)",
+      "Bash(CLAUDE_AGENT_NAME=* amp-send.sh:*)"
+    ]
+  }
+}
+```
+
+Merge these into an existing `permissions.allow` array rather than replacing it,
+and note this is **per machine**.
+
+**Deliberately not on this list:**
+
+| command | why it should still prompt |
+|---|---|
+| `amp-init.sh`, `amp-register.sh` | they change the agent's identity |
+| `amp-delete.sh` | deleting mail is irreversible |
+
+The three invocation forms (bare, `CLAUDE_AGENT_NAME=`, `AMP_DIR=`) exist because
+agents are launched in different ways; allow the ones your launcher actually
+uses.
+
 ## Address Formats
 
 **Local addresses** (work within your AI Maestro mesh):
@@ -165,8 +212,32 @@ amp-send.sh <recipient> "<subject>" "<message>" --attach /path/to/file.pdf
 ### amp-reply.sh — Reply to a Message
 
 ```bash
-amp-reply.sh <message-id> "<reply-message>"
+amp-reply.sh <message-id> "<reply-message>"          # reply to a specific message
+amp-reply.sh <message-id> "<reply-message>" --force  # reply even if it is not the one you just read
 ```
+
+**Reply to the message you actually read — always pass the id of THAT message.**
+
+amp-reply sends to the sender of whatever id you give it. If the id is wrong, the
+reply goes to the wrong conversation — on a shared estate that can put one party's
+private detail into another agent's mailbox. This has happened in production.
+
+**Never build the id from the top of the inbox:**
+
+```bash
+# ✗ DANGER — replies to whoever is top of the inbox RIGHT NOW, not to the
+#            message you were answering. Top-of-inbox changes between reading
+#            and replying.
+amp-reply.sh "$(amp-inbox.sh | head -1)" "..."
+
+# ✓ CORRECT — read the message, then reply to that same id.
+amp-read.sh msg_1234567890_abc     # shows the message, records it as last-read
+amp-reply.sh msg_1234567890_abc "..."
+```
+
+As a safety net, amp-reply **refuses** when the target is not the message you most
+recently read in this terminal, and tells you both ids. If you genuinely mean to
+reply to a message you did not just read, pass `--force`.
 
 ### amp-download.sh — Download Attachments
 
@@ -248,7 +319,7 @@ Agents should map these user intents to the appropriate commands:
 - "Do I have any messages?" → `amp-inbox.sh --count`
 - "Send a message to alice saying hello" → `amp-send.sh alice "Hello" "hello"`
 - "Tell backend-api that the build is ready" → `amp-send.sh backend-api "Build ready" "..."`
-- "Reply to the last message" → `amp-reply.sh <id> "..."`
+- "Reply to the last message" → `amp-read.sh <id>` first (this records it), then `amp-reply.sh <id> "..."` with the SAME id — never `amp-reply.sh "$(amp-inbox.sh | head -1)" "..."`
 - "Download the attachments from that message" → `amp-download.sh <id> --all`
 - "Register me with Crabmail" → Ask for User Key, then `amp-register.sh`
 - "Send the build log to alice" → `amp-send.sh alice "Build log" "..." --attach build.log`

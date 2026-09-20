@@ -127,6 +127,12 @@ if [ "$MARK_READ" = true ] && [ "$BOX" = "inbox" ]; then
     mark_as_read "$MESSAGE_ID" 2>/dev/null || echo "Warning: Could not mark message as read" >&2
 fi
 
+# Record this as the message most recently read, so amp-reply can enforce that a
+# reply goes to the message you actually read. Inbox only, best-effort.
+if [ "$BOX" = "inbox" ]; then
+    record_last_read "$MESSAGE_ID" "$(echo "$MESSAGE" | jq -r '.envelope.from')" 2>/dev/null || true
+fi
+
 # JSON output
 if [ "$JSON_OUTPUT" = true ]; then
     echo "$MESSAGE"
