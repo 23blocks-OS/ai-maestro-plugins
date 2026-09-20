@@ -1381,6 +1381,49 @@ read_message() {
     cat "$msg_file"
 }
 
+# ── Reply-target safety ──────────────────────────────────────────────────────
+#
+# The failure this guards against, seen in production on a multi-agent estate:
+#
+#     amp-reply "$(amp-inbox | head -1)" "my reply"
+#
+# `head -1` yields whatever is TOP of the inbox at that instant, which is not
+# necessarily the message you were answering — and top-of-inbox is exactly what
+# changes between reading a message and replying to it. amp-reply then faithfully
+# sends to that message's sender: the wrong conversation, and on a shared estate,
+# another party's thread. One such misroute put one company's internal
+# compliance detail into a different agent's mailbox.
+#
+# The invariant that actually prevents it is not "ban head -1" (the next caller
+# pipes something else) but "you reply to the message you just read". So amp-read
+# records the message it showed you, and amp-reply refuses a target that is not
+# that message unless you override. State is per-agent AND per-terminal, so two
+# shells driving the same agent do not clobber each other's context.
+_amp_last_read_file() {
+    local tty_id
+    tty_id="$(tty 2>/dev/null | tr -c 'a-zA-Z0-9' '_')"
+    case "$tty_id" in ''|not_a_tty|*not*tty*) tty_id="notty" ;; esac
+    echo "${AMP_DIR}/.last-read-${tty_id}"
+}
+
+# Record the message a read just surfaced. Best-effort: a failure here must never
+# break the read itself.
+record_last_read() {
+    local id="$1" from="$2"
+    [ -n "$id" ] || return 0
+    printf '%s\t%s\n' "$id" "$from" > "$(_amp_last_read_file)" 2>/dev/null || true
+}
+
+get_last_read_id() {
+    local f; f="$(_amp_last_read_file)"
+    [ -f "$f" ] && cut -f1 "$f" 2>/dev/null || echo ""
+}
+
+get_last_read_from() {
+    local f; f="$(_amp_last_read_file)"
+    [ -f "$f" ] && cut -f2 "$f" 2>/dev/null || echo ""
+}
+
 # Mark message as read
 mark_as_read() {
     local message_id="$1"
