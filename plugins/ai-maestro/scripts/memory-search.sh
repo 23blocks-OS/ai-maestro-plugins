@@ -69,6 +69,20 @@ echo "Searching memory for: $QUERY"
 echo "Mode: $MODE"
 echo "---"
 
+# Long-term memories first: decisions, facts, preferences, patterns, insights and
+# reasoning already classified from past sessions. Best-effort; older servers
+# without the recall endpoint just skip this section.
+RECALL=$(memory_recall "$AGENT_ID" "q=${ENCODED_QUERY}&limit=5&maxDistance=0.45" 2>/dev/null || true)
+RECALL_COUNT=$(echo "$RECALL" | jq '.memories // [] | length' 2>/dev/null || echo 0)
+if [ "${RECALL_COUNT:-0}" != "0" ]; then
+    echo "Long-term memories ($RECALL_COUNT):"
+    echo ""
+    echo "$RECALL" | jq -r '.memories[] | "[\(.category) · \((.created_at // 0) / 1000 | strftime("%Y-%m-%d"))]\n  \(.content[0:400] | gsub("\n"; " "))\n"'
+    echo "---"
+    echo "Conversation history:"
+    echo ""
+fi
+
 # Build params
 PARAMS="q=${ENCODED_QUERY}&mode=${MODE}&limit=${LIMIT}"
 if [ -n "$ROLE" ]; then
