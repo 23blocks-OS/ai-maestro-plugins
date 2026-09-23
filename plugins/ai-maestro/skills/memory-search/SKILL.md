@@ -1,11 +1,11 @@
 ---
 name: memory-search
-description: PROACTIVELY search conversation history and semantic memory BEFORE starting new work. Use at the START of any non-trivial task to recall prior decisions, avoid repeating past discussions, and reuse what was already learned. Also use when the user asks to "search memory", "what did we discuss", "remember when", "find previous conversation", or "check history". Your memory is valuable — check it first rather than starting from scratch.
+description: PROACTIVELY search your long-term memory BEFORE starting new work and BEFORE changing anything. Use at the START of any non-trivial task to recall prior decisions and facts, and before deploying, moving, deleting or reconfiguring something to see what depends on it (memory-search.sh --about <entity>). Also use when the user asks to "search memory", "what did we discuss", "remember when", "find previous conversation", or "check history". Your memory is valuable — check it first rather than starting from scratch.
 allowed-tools: Bash
 compatibility: Requires AI Maestro (aimaestro.dev) with Bash shell access
 metadata:
   author: 23blocks
-  version: 1.0.0
+  version: 1.1.0
 ---
 
 # AI Maestro Memory Search
@@ -41,23 +41,48 @@ When the user gives you ANY instruction, you MUST FIRST search your memory for:
 4. NOW you can build on previous work, not start over
 ```
 
-### Memory before files
+### What your memory is
 
-Check memory before you open files to re-learn something. Past decisions, the
-reasons behind them, and gotchas are in memory; files only show the current
-state, not why it is that way.
+Your context window is your **short-term memory**: this session, and gone when
+it ends. AI Maestro keeps your **long-term memory**, built every night from
+your own conversations, including the ones Claude Code deleted after 30 days
+(they are rebuilt from your message index):
 
-You will often already have memory in your context: AI Maestro injects a
-`## Memory:` block at session start (your standing decisions and preferences)
-and with each user prompt (past notes on that topic). Read it first. Those
-entries are verbatim excerpts from earlier sessions and can be outdated, so
-verify anything you act on.
+- **Memory cards**: one-sentence statements of durable knowledge (decisions
+  and why, facts about systems and the environment, preferences, lessons),
+  each backed by the passages it came from. "Seen in N sessions" means the
+  same knowledge came up that often; more sessions, more weight.
+- **The entity graph**: the specific things you work with (services, hosts,
+  buckets, repos, files, people) and directed relations between them:
+  `X runs_on Y`, `X depends_on Y`, `X stores_data_in Y`, `X deploys_to Y`,
+  `X breaks Y`... A relation marked **(no longer)** was said to have ended in
+  a later session.
 
-`memory-search.sh` shows **long-term memories** first (decisions, facts,
-preferences, patterns, insights and reasoning, classified from past sessions),
-then matching raw conversation history. Each long-term memory reads as a one-line
-card; entities it mentions are graph nodes, so when a task is about a specific
-thing (a host, a service, a file), start with `memory-search.sh --about "<name>"`.
+The memory is yours alone; other agents have their own.
+
+### Memory before files, relations before changes
+
+You often already have memory in context. AI Maestro injects `## Memory:`
+blocks: at session start (your standing decisions and preferences), and with
+each prompt (what you know about the entities the prompt names, and past notes
+on the topic). **Read them first.** They can be outdated: verify anything you
+act on.
+
+Before you change something (deploy, move, delete, migrate, reconfigure),
+check what it relates to:
+
+```bash
+memory-search.sh --about "<the thing you are about to change>"
+```
+
+It lists what runs on it, stores data in it, depends on it and what it depends
+on, and the memory cards that mention it. Consider everything a change
+affects before making it. Check memory before opening files to re-learn
+something: files show the current state, memory shows why it is that way and
+what broke last time.
+
+`memory-search.sh "<query>"` shows memory cards first, then matching raw
+conversation history.
 
 ---
 
@@ -66,7 +91,7 @@ thing (a host, a service, a file), start with `memory-search.sh --about "<name>"
 | Command | Description |
 |---------|-------------|
 | `memory-search.sh "<query>"` | Hybrid search (recommended) |
-| `memory-search.sh --about "<entity>"` | Everything memory knows about one host, agent, service, file or person: its relations and memory cards |
+| `memory-search.sh --about "<entity>"` | Everything memory knows about one host, agent, service, file or person: its relations (current first, ended ones marked) and memory cards. Use before changing that thing. |
 | `memory-search.sh "<query>" --mode semantic` | Find conceptually related |
 | `memory-search.sh "<query>" --mode term` | Exact term matching |
 | `memory-search.sh "<query>" --role user` | Only user messages |

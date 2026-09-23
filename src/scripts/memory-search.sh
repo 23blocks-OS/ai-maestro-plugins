@@ -49,7 +49,7 @@ if [ "$1" = "--about" ]; then
     echo ""
     if [ "$(echo "$ABOUT" | jq '.relations | length')" != "0" ]; then
         echo "Relations:"
-        echo "$ABOUT" | jq -r '.relations[] | if .direction == "out" then "  \(.predicate) \(.name)" else "  \(.name) \(.predicate) this" end'
+        echo "$ABOUT" | jq -r '.relations[] | (if .direction == "out" then "  \(.predicate | gsub("_"; " ")) \(.name)" else "  \(.name) \(.predicate | gsub("_"; " ")) this" end) + (if .holds == false then "  (no longer)" else "" end) + (if (.weight // 1) > 1 then "  [\(.weight) sessions]" else "" end)'
         echo ""
     fi
     echo "Memories:"
