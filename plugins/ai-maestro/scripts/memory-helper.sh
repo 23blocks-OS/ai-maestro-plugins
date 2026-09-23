@@ -31,6 +31,15 @@ memory_recall() {
     api_query "GET" "/api/agents/${agent_id}/memory/recall?${params}"
 }
 
+# Everything known about one entity (a host, agent, service, file, person...)
+memory_entity() {
+    local agent_id="$1"
+    shift
+    local params="$@"
+
+    api_query "GET" "/api/agents/${agent_id}/memory/entity?${params}"
+}
+
 # Initialize - get session and agent ID
 init_memory() {
     init_common || return 1
