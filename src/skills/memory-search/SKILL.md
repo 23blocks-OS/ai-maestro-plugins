@@ -55,7 +55,9 @@ verify anything you act on.
 
 `memory-search.sh` shows **long-term memories** first (decisions, facts,
 preferences, patterns, insights and reasoning, classified from past sessions),
-then matching raw conversation history.
+then matching raw conversation history. Each long-term memory reads as a one-line
+card; entities it mentions are graph nodes, so when a task is about a specific
+thing (a host, a service, a file), start with `memory-search.sh --about "<name>"`.
 
 ---
 
@@ -64,6 +66,7 @@ then matching raw conversation history.
 | Command | Description |
 |---------|-------------|
 | `memory-search.sh "<query>"` | Hybrid search (recommended) |
+| `memory-search.sh --about "<entity>"` | Everything memory knows about one host, agent, service, file or person: its relations and memory cards |
 | `memory-search.sh "<query>" --mode semantic` | Find conceptually related |
 | `memory-search.sh "<query>" --mode term` | Exact term matching |
 | `memory-search.sh "<query>" --role user` | Only user messages |

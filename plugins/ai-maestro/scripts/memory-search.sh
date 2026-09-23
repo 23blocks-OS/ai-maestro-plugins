@@ -1,6 +1,7 @@
 #!/bin/bash
 # AI Maestro - Search conversation history
 # Usage: memory-search.sh <query> [--mode MODE] [--role ROLE] [--limit N]
+#        memory-search.sh --about <entity>
 # Example: memory-search.sh "authentication"
 #          memory-search.sh "component design" --mode semantic
 #          memory-search.sh "user request" --role user
@@ -12,6 +13,7 @@ source "${SCRIPT_DIR}/memory-helper.sh"
 
 show_help() {
     echo "Usage: memory-search.sh <query> [options]"
+    echo "       memory-search.sh --about <entity>"
     echo ""
     echo "Search your conversation history for past discussions and context."
     echo ""
@@ -19,6 +21,7 @@ show_help() {
     echo "  --mode MODE    Search mode: hybrid (default), semantic, term, symbol"
     echo "  --role ROLE    Filter by role: user, assistant"
     echo "  --limit N      Limit results (default: 10)"
+    echo "  --about NAME   What memory knows about one entity (host, agent, service, file, person...)"
     echo ""
     echo "Examples:"
     echo "  memory-search.sh \"authentication\"           # Hybrid search"
@@ -30,6 +33,28 @@ show_help() {
 if [ -z "$1" ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     show_help
     exit 1
+fi
+
+# --about <entity>: the entity's relations and the memory cards that mention it
+if [ "$1" = "--about" ]; then
+    if [ -z "$2" ]; then show_help; exit 1; fi
+    init_memory || exit 1
+    ENCODED_NAME=$(printf '%s' "$2" | jq -sRr @uri)
+    ABOUT=$(memory_entity "$AGENT_ID" "name=${ENCODED_NAME}") || { echo "Nothing in memory about: $2"; exit 0; }
+    if [ "$(echo "$ABOUT" | jq -r '.entity.name // empty')" = "" ]; then
+        echo "Nothing in memory about: $2"
+        exit 0
+    fi
+    echo "$ABOUT" | jq -r '"\(.entity.name) (\(.entity.type), mentioned in \(.entity.mention_count) memories)" + (if (.entity.aliases | length) > 0 then "\n  also known as: " + (.entity.aliases | join(", ")) else "" end)'
+    echo ""
+    if [ "$(echo "$ABOUT" | jq '.relations | length')" != "0" ]; then
+        echo "Relations:"
+        echo "$ABOUT" | jq -r '.relations[] | if .direction == "out" then "  \(.predicate) \(.name)" else "  \(.name) \(.predicate) this" end'
+        echo ""
+    fi
+    echo "Memories:"
+    echo "$ABOUT" | jq -r '.memories[] | "[\(.category) · \((.created_at // 0) / 1000 | strftime("%Y-%m-%d"))] \((if .card.status == "done" then .card.statement else .content end)[0:400] | gsub("\n"; " "))"'
+    exit 0
 fi
 
 QUERY="$1"
@@ -77,7 +102,7 @@ RECALL_COUNT=$(echo "$RECALL" | jq '.memories // [] | length' 2>/dev/null || ech
 if [ "${RECALL_COUNT:-0}" != "0" ]; then
     echo "Long-term memories ($RECALL_COUNT):"
     echo ""
-    echo "$RECALL" | jq -r '.memories[] | "[\(.category) · \((.created_at // 0) / 1000 | strftime("%Y-%m-%d"))]\n  \(.content[0:400] | gsub("\n"; " "))\n"'
+    echo "$RECALL" | jq -r '.memories[] | "[\(.category) · \((.created_at // 0) / 1000 | strftime("%Y-%m-%d"))]\n  \(((.statement // .content) // "")[0:400] | gsub("\n"; " "))\n"'
     echo "---"
     echo "Conversation history:"
     echo ""
