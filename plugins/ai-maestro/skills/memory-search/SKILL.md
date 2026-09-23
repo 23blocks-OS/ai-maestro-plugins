@@ -41,6 +41,22 @@ When the user gives you ANY instruction, you MUST FIRST search your memory for:
 4. NOW you can build on previous work, not start over
 ```
 
+### Memory before files
+
+Check memory before you open files to re-learn something. Past decisions, the
+reasons behind them, and gotchas are in memory; files only show the current
+state, not why it is that way.
+
+You will often already have memory in your context: AI Maestro injects a
+`## Memory:` block at session start (your standing decisions and preferences)
+and with each user prompt (past notes on that topic). Read it first. Those
+entries are verbatim excerpts from earlier sessions and can be outdated, so
+verify anything you act on.
+
+`memory-search.sh` shows **long-term memories** first (decisions, facts,
+preferences, patterns, insights and reasoning, classified from past sessions),
+then matching raw conversation history.
+
 ---
 
 ## Available Commands

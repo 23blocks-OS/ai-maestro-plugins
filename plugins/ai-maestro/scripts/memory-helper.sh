@@ -22,6 +22,15 @@ memory_query() {
     api_query "GET" "/api/agents/${agent_id}/search?${params}"
 }
 
+# Recall long-term memories (classified, verbatim) nearest to a query
+memory_recall() {
+    local agent_id="$1"
+    shift
+    local params="$@"
+
+    api_query "GET" "/api/agents/${agent_id}/memory/recall?${params}"
+}
+
 # Initialize - get session and agent ID
 init_memory() {
     init_common || return 1
