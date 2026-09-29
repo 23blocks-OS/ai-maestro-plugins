@@ -52,7 +52,7 @@ case "${1:-}" in
         echo ""
         echo "Restart Claude Code to see it. The status bar will show:"
         echo "  your-agent@tenant.provider | N unread"
-        echo "  Model | ctx N% | \$cost"
+        echo "  Model | ctx 42k (4%) | \$cost   (adds /compact soon at 150k, /compact now over 200k)"
         exit 0
         ;;
 
@@ -100,6 +100,11 @@ input=$(cat)
 # Extract Claude Code session data
 MODEL=$(echo "$input" | jq -r '.model.display_name // "?"')
 PCT=$(echo "$input" | jq -r '.context_window.used_percentage // 0' | cut -d. -f1)
+# Absolute context size: a percentage hides cost on 1M-context models (79% of
+# 1M is ~790k tokens re-read on every step). Every token above 200k is billed
+# at the long-context rate (2x).
+CTX_TOKENS=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0' | cut -d. -f1)
+OVER_200K=$(echo "$input" | jq -r '.exceeds_200k_tokens // false')
 COST=$(echo "$input" | jq -r '.cost.total_cost_usd // 0')
 CWD=$(echo "$input" | jq -r '.workspace.current_dir // empty')
 # Claude Code's native session name (set by `claude --name` / `/rename`). Present
@@ -231,12 +236,26 @@ fi
 
 COST_FMT=$(printf '%.2f' "$COST")
 
-if [ "$PCT" -ge 80 ]; then
-    CTX="\033[31m${PCT}%\033[0m"
-elif [ "$PCT" -ge 50 ]; then
-    CTX="\033[33m${PCT}%\033[0m"
+# Recommend /compact before a session gets expensive (AMP_STATUSLINE_COMPACT_AT,
+# default 150k tokens: a margin before the 200k long-context price step).
+COMPACT_AT="${AMP_STATUSLINE_COMPACT_AT:-150000}"
+case "$CTX_TOKENS" in ''|*[!0-9]*) CTX_TOKENS=0 ;; esac
+case "$COMPACT_AT" in ''|*[!0-9]*) COMPACT_AT=150000 ;; esac
+if [ "$CTX_TOKENS" -ge 1000 ]; then
+    CTX_SIZE="$(( (CTX_TOKENS + 500) / 1000 ))k (${PCT}%)"
 else
-    CTX="${PCT}%"
+    CTX_SIZE="${PCT}%"
+fi
+if [ "$OVER_200K" = "true" ] || [ "$CTX_TOKENS" -ge 200000 ]; then
+    CTX="\033[31m${CTX_SIZE} · ⚠ /compact now: 2× cost\033[0m"
+elif [ "$CTX_TOKENS" -ge "$COMPACT_AT" ]; then
+    CTX="\033[33m${CTX_SIZE} · /compact soon\033[0m"
+elif [ "$PCT" -ge 80 ]; then
+    CTX="\033[31m${CTX_SIZE}\033[0m"
+elif [ "$PCT" -ge 50 ]; then
+    CTX="\033[33m${CTX_SIZE}\033[0m"
+else
+    CTX="${CTX_SIZE}"
 fi
 
 echo -e "$AMP_PART"
