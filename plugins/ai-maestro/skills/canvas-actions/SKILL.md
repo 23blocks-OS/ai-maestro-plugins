@@ -1,10 +1,10 @@
 ---
 name: canvas-actions
-description: Create, manage, and interact with canvas HTML pages. Write visual UIs that users see in the AI Maestro dashboard, receive structured interactions when users click/submit/select, and update pages in response. Full lifecycle management for agent-rendered canvases.
+description: Create and update interactive HTML pages (canvases) that the user sees in the AI Maestro dashboard, and handle what they click, submit or select. Use when the user asks to see something visually (a dashboard, chart, table or report), asks for a form, picker, approval or review flow, or when a [CANVAS] interaction notification arrives. Not for one-line answers, code or terminal commands.
 license: Apache-2.0
 compatibility: Requires AI Maestro dashboard. Agent must have an ID registered in ~/.aimaestro/agents/.
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
   homepage: "https://agentactions.org"
   repository: "https://github.com/agentmessaging/agent-actions"
 ---
@@ -15,26 +15,25 @@ Create visual, interactive HTML pages that users see in the AI Maestro dashboard
 
 ## When to use this skill
 
-Use canvas whenever the output is better experienced visually than as terminal text.
+Use a canvas when the user asks for something visual or interactive, or needs to act on the result.
 
-### Proactive triggers -- create a canvas when:
+### Create a canvas when:
 
-- **User asks to see data visually**: "show me", "display", "visualize", "report on", "dashboard for", "chart of", "table of", "summary of"
-- **User asks for a form or config UI**: "let me configure", "settings for", "create a form", "let me pick", "I want to choose"
-- **User asks for an approval or review flow**: "let me approve", "review these", "I need to decide", "show me the options"
-- **User asks you to build something interactive**: "build me a", "create a page", "make a UI", "wizard for", "control panel"
-- **Your output has structured data**: test results, API responses, file listings, metrics, logs, comparisons -- anything that would benefit from sorting, filtering, or visual hierarchy
-- **Your output has actions the user should take**: approve/reject, select from options, configure settings, trigger operations
-- **You are presenting a status or progress report**: build status, deployment state, system health, task progress
+- **The user asks to see data visually**: "show me", "display", "visualize", "dashboard for", "chart of", "table of"
+- **The user asks for a form or config UI**: "let me configure", "settings for", "create a form", "let me pick", "I want to choose"
+- **The user asks for an approval or review flow**: "let me approve", "review these", "I need to decide", "show me the options"
+- **The user asks you to build something interactive**: "build me a", "create a page", "make a UI", "wizard for", "control panel"
+- **The user must act on your result**: approve or reject, choose among options, configure settings, trigger an operation
+- **A [CANVAS] notification arrives**: a user interacted with one of your pages (see Receiving Interactions)
 
 ### Do NOT use canvas for:
 
-- Quick one-line answers
+- Quick answers, summaries or status updates the user did not ask to see as a page
 - Code that should go in a file
 - Terminal commands the user should run
-- Simple text responses
+- Ordinary command output (test results, logs, file listings): report it in text
 
-**Default behavior: When in doubt, create a canvas.** A visual, interactive page is almost always more useful than a wall of terminal text. The user can always read it in the Canvas tab of the dashboard.
+**Default: answer in text.** A canvas is for when the user wants a page or needs to act; it costs the user a switch to the Canvas tab.
 
 ## Architecture: Data-Driven Interactive Pages
 
@@ -163,65 +162,7 @@ Never hardcode data into HTML elements. Always embed data as JSON in a `<script>
 
 ### Data block examples by content type
 
-**API response data:**
-```html
-<script type="application/json" id="page-data">
-{
-    "endpoint": "/api/v1/users",
-    "method": "GET",
-    "status": 200,
-    "responseTime": 142,
-    "headers": { "content-type": "application/json", "x-request-id": "abc123" },
-    "body": { "users": [...], "total": 50, "page": 1 }
-}
-</script>
-```
-
-**File listing / directory tree:**
-```html
-<script type="application/json" id="page-data">
-{
-    "root": "/Users/project/src",
-    "totalFiles": 42,
-    "totalSize": 284000,
-    "files": [
-        { "path": "index.ts", "size": 1200, "modified": "2026-05-18T10:00:00Z", "type": "typescript" },
-        { "path": "utils/helpers.ts", "size": 3400, "modified": "2026-05-17T09:00:00Z", "type": "typescript" }
-    ]
-}
-</script>
-```
-
-**Metrics / monitoring:**
-```html
-<script type="application/json" id="page-data">
-{
-    "collectedAt": "2026-05-18T15:30:00Z",
-    "services": [
-        { "name": "api-gateway", "status": "healthy", "uptime": 99.97, "latency": 45, "requests": 12400 },
-        { "name": "auth-service", "status": "degraded", "uptime": 98.5, "latency": 230, "requests": 8200 }
-    ],
-    "alerts": [
-        { "id": "a1", "severity": "warning", "message": "Auth latency above threshold", "since": "2026-05-18T14:00:00Z" }
-    ]
-}
-</script>
-```
-
-**Comparison / diff data:**
-```html
-<script type="application/json" id="page-data">
-{
-    "left": { "label": "v1.2.0", "date": "2026-05-10" },
-    "right": { "label": "v1.3.0", "date": "2026-05-18" },
-    "changes": [
-        { "file": "src/auth.ts", "type": "modified", "additions": 42, "deletions": 15 },
-        { "file": "src/new-feature.ts", "type": "added", "additions": 120, "deletions": 0 }
-    ],
-    "summary": { "filesChanged": 12, "additions": 340, "deletions": 89 }
-}
-</script>
-```
+Examples for tables, metrics, lists, timelines and other content types are in [references/data-block-examples.md](references/data-block-examples.md). Read it when you build a page for one of those.
 
 ### Interactive features to always include
 

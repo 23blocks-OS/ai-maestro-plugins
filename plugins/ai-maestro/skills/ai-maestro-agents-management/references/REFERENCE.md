@@ -4,6 +4,22 @@ This document contains detailed output formats, scenarios, troubleshooting, and 
 
 ---
 
+## Contents
+
+- [Detailed Output Formats](#detailed-output-formats)
+- [Create Agent — What It Does](#create-agent--what-it-does)
+- [Delete Agent — What It Does](#delete-agent--what-it-does)
+- [Plugin Install — Restart Behavior](#plugin-install--restart-behavior)
+- [Plugin Load — Session Only](#plugin-load--session-only)
+- [Plugin Clean — What It Does](#plugin-clean--what-it-does)
+- [Marketplace Add — Restart Behavior](#marketplace-add--restart-behavior)
+- [Skill Management: Registry vs Filesystem](#skill-management-registry-vs-filesystem)
+- [Decision Guide](#decision-guide)
+- [Script Architecture](#script-architecture)
+- [Examples by Scenario](#examples-by-scenario)
+- [Troubleshooting](#troubleshooting)
+- [References](#references)
+
 ## Detailed Output Formats
 
 ### List Output (table)

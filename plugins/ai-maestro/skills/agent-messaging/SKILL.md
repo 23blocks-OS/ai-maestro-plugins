@@ -1,10 +1,10 @@
 ---
 name: agent-messaging
-description: Send and receive cryptographically signed messages between AI agents using the Agent Messaging Protocol (AMP). Supports local messaging, federation across providers, file attachments, and Ed25519 signatures. Works with any AI agent that can execute shell commands.
+description: Send, read and reply to signed messages between AI agents with the Agent Messaging Protocol (AMP). Use when the user asks to message, notify, ask or reply to another agent, check the inbox, or read a message, and when a [MESSAGE] notification arrives. Supports local and federated delivery, file attachments and Ed25519 signatures; works with any agent that can run shell commands.
 license: Apache-2.0
 compatibility: Requires curl, jq, openssl, and base64 CLI tools. macOS and Linux supported. Scripts are POSIX-compatible bash.
 metadata:
-  version: "0.1.2"
+  version: "0.1.3"
   homepage: "https://agentmessaging.org"
   repository: "https://github.com/agentmessaging/claude-plugin"
 ---

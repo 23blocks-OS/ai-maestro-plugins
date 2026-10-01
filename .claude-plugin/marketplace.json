@@ -14,14 +14,22 @@
     {
       "name": "ai-maestro",
       "source": "./plugins/ai-maestro",
-      "description": "AI agent orchestration — memory search, code graph, AMP messaging, docs search, task planning",
-      "version": "1.0.0",
+      "description": "AI agent orchestration: agent messaging (AMP), identity (AID), canvas pages, memory, docs and code graph search, agent management and planning",
+      "version": "1.1.0",
       "author": {
         "name": "23blocks"
       },
       "homepage": "https://github.com/23blocks-OS/ai-maestro",
       "license": "MIT",
-      "keywords": ["ai", "agents", "orchestration", "memory", "graph", "messaging", "amp"],
+      "keywords": [
+        "ai",
+        "agents",
+        "orchestration",
+        "memory",
+        "graph",
+        "messaging",
+        "amp"
+      ],
       "category": "productivity"
     }
   ]

@@ -1,6 +1,6 @@
 ---
 name: graph-query
-description: PROACTIVELY query the code graph BEFORE modifying any component. Use it to find callers, dependencies, and the blast radius of a change so you do not break something you did not read. Also use when the user asks "find callers", "check dependencies", "what uses this", or when exploring an unfamiliar codebase. Check the graph before editing, not after something breaks.
+description: Query the code graph for callers, dependencies and the blast radius of a change. Use before changing the signature or behaviour of a function, class or module that other code uses, when the user asks "find callers", "what uses this" or "check dependencies", and when exploring an unfamiliar codebase.
 allowed-tools: Bash
 compatibility: Requires AI Maestro (aimaestro.dev) with Bash shell access
 metadata:
@@ -143,7 +143,7 @@ Use with `graph-find-by-type.sh`:
 
 This skill relies on an internal helper script that provides shared utility functions:
 
-- **`graph-helper.sh`** - Sourced by the `graph-*.sh` tool scripts. Provides graph-specific API functions (`graph_query`, `init_graph`) and initialization logic. Located alongside the tool scripts in `~/.local/bin/` (installed) or `plugin/src/scripts/` (source). If tool scripts fail with "common.sh not found", re-run the installer (`~/ai-maestro/install-graph-tools.sh`).
+- **`graph-helper.sh`** - Sourced by the `graph-*.sh` tool scripts. Provides graph-specific API functions (`graph_query`, `init_graph`) and initialization logic. Located alongside the tool scripts in `~/.local/bin/` (installed) or `plugin/src/scripts/` (source). If tool scripts fail with "common.sh not found", re-run `install-graph-tools.sh` from your AI Maestro checkout (the folder AI Maestro was installed from; `update-aimaestro.sh` also reinstalls it).
 
 ## Error Handling
 
@@ -151,7 +151,7 @@ This skill relies on an internal helper script that provides shared utility func
 - Check PATH: `which graph-describe.sh`
 - Verify scripts installed: `ls -la ~/.local/bin/graph-*.sh`
 - Scripts are installed to `~/.local/bin/` which should be in your PATH
-- If not found, run the installer from the AI Maestro project root: `~/ai-maestro/install-graph-tools.sh`
+- If not found, run `install-graph-tools.sh` from your AI Maestro checkout
 
 **API connection fails:**
 - Ensure AI Maestro is running: `curl http://127.0.0.1:23000/api/hosts/identity`
@@ -163,9 +163,9 @@ This skill relies on an internal helper script that provides shared utility func
 
 ## Installation
 
-If commands are not found, run the installer from the AI Maestro project root:
+If commands are not found, run the installer from your AI Maestro checkout (the folder AI Maestro was installed from):
 ```bash
-~/ai-maestro/install-graph-tools.sh
+cd <your AI Maestro checkout> && ./install-graph-tools.sh
 ```
 
 This installs scripts to `~/.local/bin/`.
