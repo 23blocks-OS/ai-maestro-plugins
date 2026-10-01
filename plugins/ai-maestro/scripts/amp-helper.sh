@@ -1334,26 +1334,39 @@ find_message_file() {
         return 1
     fi
 
-    # Check flat structure first (backward compatibility)
-    local flat_file="${base_dir}/${message_id}.json"
-    if [ -f "$flat_file" ]; then
-        echo "$flat_file"
-        return 0
-    fi
-
-    # Search in subdirectories (protocol-compliant structure)
-    shopt -s nullglob
-    for subdir in "${base_dir}"/*/; do
-        if [ -d "$subdir" ]; then
-            local nested_file="${subdir}${message_id}.json"
-            if [ -f "$nested_file" ]; then
-                shopt -u nullglob
-                echo "$nested_file"
-                return 0
-            fi
-        fi
+    # The same message has two spellings: AI Maestro's API and pane notices
+    # show msg-<ts>-<rand>, while the file on disk is msg_<ts>_<rand>.json.
+    # validate_message_id accepts both, so look for both; otherwise an id
+    # copied from a notice reads "Message not found".
+    local -a ids=("$message_id")
+    local alt
+    for alt in "${message_id//-/_}" "${message_id//_/-}"; do
+        [ "$alt" != "$message_id" ] && ids+=("$alt")
     done
-    shopt -u nullglob
+
+    local id
+    for id in "${ids[@]}"; do
+        # Check flat structure first (backward compatibility)
+        local flat_file="${base_dir}/${id}.json"
+        if [ -f "$flat_file" ]; then
+            echo "$flat_file"
+            return 0
+        fi
+
+        # Search in subdirectories (protocol-compliant structure)
+        shopt -s nullglob
+        for subdir in "${base_dir}"/*/; do
+            if [ -d "$subdir" ]; then
+                local nested_file="${subdir}${id}.json"
+                if [ -f "$nested_file" ]; then
+                    shopt -u nullglob
+                    echo "$nested_file"
+                    return 0
+                fi
+            fi
+        done
+        shopt -u nullglob
+    done
 
     return 1
 }
