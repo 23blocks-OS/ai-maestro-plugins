@@ -4,458 +4,86 @@ description: Create and update interactive HTML pages (canvases) that the user s
 license: Apache-2.0
 compatibility: Requires AI Maestro dashboard. Agent must have an ID registered in ~/.aimaestro/agents/.
 metadata:
-  version: "1.2.0"
+  version: "1.3.0"
   homepage: "https://agentactions.org"
   repository: "https://github.com/agentmessaging/agent-actions"
 ---
 
 # Agent Canvas
 
-Create visual, interactive HTML pages that users see in the AI Maestro dashboard. Embed live data, receive structured actions when users interact, and update pages in response.
+A canvas is an HTML file you write to your canvas directory. The AI Maestro dashboard shows it in the agent's Canvas tab, and anything the user does on it that calls `maestro.send()` comes back to you as a `[CANVAS]` notification. Answer in text by default; a canvas is for when the user asked for a page or has to act on your result, because viewing one means switching to the Canvas tab.
 
-## When to use this skill
+## Where pages live
 
-Use a canvas when the user asks for something visual or interactive, or needs to act on the result.
-
-### Create a canvas when:
-
-- **The user asks to see data visually**: "show me", "display", "visualize", "dashboard for", "chart of", "table of"
-- **The user asks for a form or config UI**: "let me configure", "settings for", "create a form", "let me pick", "I want to choose"
-- **The user asks for an approval or review flow**: "let me approve", "review these", "I need to decide", "show me the options"
-- **The user asks you to build something interactive**: "build me a", "create a page", "make a UI", "wizard for", "control panel"
-- **The user must act on your result**: approve or reject, choose among options, configure settings, trigger an operation
-- **A [CANVAS] notification arrives**: a user interacted with one of your pages (see Receiving Interactions)
-
-### Do NOT use canvas for:
-
-- Quick answers, summaries or status updates the user did not ask to see as a page
-- Code that should go in a file
-- Terminal commands the user should run
-- Ordinary command output (test results, logs, file listings): report it in text
-
-**Default: answer in text.** A canvas is for when the user wants a page or needs to act; it costs the user a switch to the Canvas tab.
-
-## Architecture: Data-Driven Interactive Pages
-
-**CRITICAL: Canvas pages must be data-driven, not static HTML.**
-
-Never hardcode data into HTML elements. Always embed data as JSON in a `<script>` block and render it with JavaScript. This makes pages interactive (sortable, filterable, searchable) instead of dead static text.
-
-### The pattern: Embedded JSON + JS rendering
-
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Test Results</title>
-    <style>/* styles here */</style>
-</head>
-<body>
-    <div id="app"></div>
-
-    <!-- DATA BLOCK: Embed all data as JSON -->
-    <script type="application/json" id="page-data">
-    {
-        "generatedAt": "2026-05-18T15:30:00Z",
-        "summary": { "total": 142, "passed": 135, "failed": 5, "skipped": 2 },
-        "tests": [
-            { "name": "auth.login", "status": "passed", "duration": 230, "suite": "auth" },
-            { "name": "auth.logout", "status": "passed", "duration": 45, "suite": "auth" },
-            { "name": "api.users.create", "status": "failed", "duration": 1200, "suite": "api", "error": "Timeout exceeded" },
-            { "name": "api.users.list", "status": "passed", "duration": 89, "suite": "api" }
-        ]
-    }
-    </script>
-
-    <!-- RENDER LOGIC: JavaScript reads the data and builds the UI -->
-    <script>
-        const DATA = JSON.parse(document.getElementById('page-data').textContent);
-
-        // State
-        let filter = 'all';
-        let sortBy = 'name';
-        let sortDir = 'asc';
-        let search = '';
-
-        function render() {
-            let tests = [...DATA.tests];
-
-            // Filter
-            if (filter !== 'all') tests = tests.filter(t => t.status === filter);
-            if (search) tests = tests.filter(t => t.name.toLowerCase().includes(search.toLowerCase()));
-
-            // Sort
-            tests.sort((a, b) => {
-                const val = a[sortBy] > b[sortBy] ? 1 : -1;
-                return sortDir === 'asc' ? val : -val;
-            });
-
-            const app = document.getElementById('app');
-            app.innerHTML = `
-                <h1>Test Results</h1>
-                <p class="subtitle">Generated ${new Date(DATA.generatedAt).toLocaleString()}</p>
-
-                <div class="summary">
-                    <div class="stat">${DATA.summary.total} <span>Total</span></div>
-                    <div class="stat good">${DATA.summary.passed} <span>Passed</span></div>
-                    <div class="stat bad">${DATA.summary.failed} <span>Failed</span></div>
-                    <div class="stat skip">${DATA.summary.skipped} <span>Skipped</span></div>
-                </div>
-
-                <div class="controls">
-                    <input type="text" placeholder="Search tests..." value="${search}"
-                        oninput="search = this.value; render()" />
-                    <select onchange="filter = this.value; render()">
-                        <option value="all" ${filter === 'all' ? 'selected' : ''}>All</option>
-                        <option value="passed" ${filter === 'passed' ? 'selected' : ''}>Passed</option>
-                        <option value="failed" ${filter === 'failed' ? 'selected' : ''}>Failed</option>
-                        <option value="skipped" ${filter === 'skipped' ? 'selected' : ''}>Skipped</option>
-                    </select>
-                </div>
-
-                <table>
-                    <thead>
-                        <tr>
-                            <th onclick="sortBy='name'; sortDir = sortDir === 'asc' ? 'desc' : 'asc'; render()">Test</th>
-                            <th onclick="sortBy='suite'; sortDir = sortDir === 'asc' ? 'desc' : 'asc'; render()">Suite</th>
-                            <th onclick="sortBy='status'; sortDir = sortDir === 'asc' ? 'desc' : 'asc'; render()">Status</th>
-                            <th onclick="sortBy='duration'; sortDir = sortDir === 'asc' ? 'desc' : 'asc'; render()">Duration</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${tests.map(t => `
-                            <tr class="${t.status}">
-                                <td>${t.name}</td>
-                                <td>${t.suite}</td>
-                                <td><span class="badge ${t.status}">${t.status}</span></td>
-                                <td>${t.duration}ms</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-
-                ${tests.length === 0 ? '<p class="empty">No tests match your filters.</p>' : ''}
-            `;
-        }
-
-        render();
-    </script>
-</body>
-</html>
+```
+~/.aimaestro/agents/$AIM_AGENT_ID/canvas/
+├── dashboard.html
+├── reports/weekly.html        # subdirectories work
+└── interactions/              # created by AI Maestro; one JSON file per user action
 ```
 
-### Why this pattern matters
+AI Maestro sets `AIM_AGENT_ID` in agent sessions. If it is empty, look the id up by name: `jq -r '.[] | select(.name=="<name>") | .id' ~/.aimaestro/agents/registry.json`.
 
-| Approach | Result |
-|----------|--------|
-| Static HTML `<table>` with hardcoded rows | Dead page. User can only read. No sorting, no filtering, no search. |
-| Embedded JSON + JS rendering | **Interactive page.** User can sort columns, filter by status, search by name. Same data, 10x more useful. |
+To create or update a page, write the file (overwrite to update). The dashboard does not watch the file: tell the user to refresh or re-select it in the Canvas tab. Delete pages with `rm`.
 
-### Data block rules
+## Writing a page
 
-1. **Always use `<script type="application/json" id="page-data">`** for the data block. This prevents execution and is parseable.
-2. **Put ALL data in one JSON block.** Don't scatter data across multiple variables.
-3. **Include metadata** in the data: timestamps, totals, source info. The page should explain itself.
-4. **Keep the render function pure.** It reads from `DATA` + state variables, rebuilds the DOM. No side effects.
-5. **Make every list sortable and filterable.** If you have 5+ items, add search. If items have categories/statuses, add a filter dropdown. If items have numeric fields, make columns sortable.
+The page runs in an iframe with `sandbox="allow-scripts"` and nothing else, so:
 
-### Data block examples by content type
+- Everything is inline: CSS in `<style>`, JS in `<script>`, images as data URIs or emoji. External stylesheets, scripts, fonts and images (CDNs included) do not load.
+- No `alert`/`confirm`/`prompt`, popups, top-level navigation or form posts. Handle forms with `event.preventDefault()` and `maestro.send()`.
 
-Examples for tables, metrics, lists, timelines and other content types are in [references/data-block-examples.md](references/data-block-examples.md). Read it when you build a page for one of those.
-
-### Interactive features to always include
-
-| Data shape | Interactive features |
-|------------|---------------------|
-| List/table (5+ rows) | Sort by columns, search, filter by category/status |
-| Metrics/numbers | Color coding (green/yellow/red), thresholds, visual bars |
-| Status items | Filter by status, group by category, dismiss/acknowledge buttons |
-| Timeline/log entries | Newest-first sort, search, level filter (info/warn/error) |
-| Config/settings | Editable fields, save button via `maestro.send('submit', ...)` |
-| Approval items | Approve/reject buttons via `maestro.send('click', ...)`, comment field |
-
-### Combining data + actions
-
-Pages can be both data-driven AND interactive with `maestro.send()`:
+Put the data in one `<script type="application/json" id="page-data">` block and render it with JavaScript rather than hardcoding it into the markup. Updating the page then means replacing one JSON block, and the page can sort, filter and search what it shows. Add those controls where the user will scan a long list; include when the data was generated so the page explains itself. Escape values before inserting them into `innerHTML`.
 
 ```html
 <script type="application/json" id="page-data">
-{
-    "pendingApprovals": [
-        { "id": "pr-42", "title": "Add OAuth support", "author": "alice", "files": 8, "additions": 340 },
-        { "id": "pr-43", "title": "Fix login bug", "author": "bob", "files": 2, "additions": 15 }
-    ]
-}
+{ "generatedAt": "2026-05-18T15:30:00Z", "items": [ ... ] }
 </script>
-
 <script>
-    const DATA = JSON.parse(document.getElementById('page-data').textContent);
-
-    function render() {
-        document.getElementById('app').innerHTML = DATA.pendingApprovals.map(pr => `
-            <div class="card">
-                <h3>${pr.title}</h3>
-                <p>by ${pr.author} | ${pr.files} files | +${pr.additions}</p>
-                <div class="actions">
-                    <button class="approve" onclick="maestro.send('click', 'approve', ${JSON.stringify(pr)})">Approve</button>
-                    <button class="reject" onclick="maestro.send('click', 'reject', { id: '${pr.id}' })">Reject</button>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    render();
+  const DATA = JSON.parse(document.getElementById('page-data').textContent);
+  // build the UI from DATA
 </script>
 ```
 
-## Your Canvas Directory
+Complete examples (a sortable, filterable report; approval cards) are in [references/page-examples.md](references/page-examples.md).
 
-Every agent has a canvas directory where HTML files are stored:
+## Sending actions back: `maestro.send(action, element, data)`
 
-```
-~/.aimaestro/agents/<your-agent-id>/canvas/
-├── dashboard.html          # Your pages go here
-├── reports/
-│   └── weekly.html         # Subdirectories supported
-└── interactions/            # User actions land here (auto-created)
-    └── 2026-05-18T15-30-00-000Z-uuid.json
-```
+The dashboard injects `maestro`; don't define it.
 
-Find your agent ID:
-```bash
-# From environment (set by AI Maestro)
-echo $AIM_AGENT_ID
-
-# Or find it in the registry
-cat ~/.aimaestro/agents/registry.json | jq '.agents[] | select(.name == "your-agent-name") | .id'
-```
-
-## Creating Canvas Pages
-
-Write self-contained HTML files to your canvas directory. The dashboard renders them in a sandboxed iframe with the Canvas tab.
-
-```bash
-cat > ~/.aimaestro/agents/$AIM_AGENT_ID/canvas/page.html << 'HTMLEOF'
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Page Title</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 24px; }
-        /* ... your styles ... */
-    </style>
-</head>
-<body>
-    <div id="app"></div>
-
-    <script type="application/json" id="page-data">
-    { /* your data here */ }
-    </script>
-
-    <script>
-        const DATA = JSON.parse(document.getElementById('page-data').textContent);
-        // render logic
-    </script>
-</body>
-</html>
-HTMLEOF
-```
-
-### maestro.send() API
-
-Use `maestro.send(action, element, data)` to send user interactions back to your agent. The `maestro` object is automatically injected by the dashboard; you don't need to define it.
+| Argument | Meaning |
+|---|---|
+| `action` | What happened. Standard values: `click`, `submit`, `change`, `select`, `toggle`, `dismiss`, `navigate`, `custom`; any other string also works. |
+| `element` | Optional: which control (id, name or label). |
+| `data` | Optional: an object with whatever you need to act, such as the item's id or the form values. |
 
 ```javascript
-maestro.send(action, element, data)
+maestro.send('click', 'deploy-btn', { env: 'prod' })
+maestro.send('submit', 'config-form', { name: 'api', timeout: 30 })
 ```
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `action` | string | Yes | What happened (see Standard Actions below) |
-| `element` | string | No | Which UI element was acted on (id, name, or label) |
-| `data` | object | No | Arbitrary key-value payload |
+`data` is stored as plain JSON on disk, so a page should never send credentials or tokens through it.
 
-### Standard Actions
+## Handling a `[CANVAS]` notification
 
-| Action | Use case | Example |
-|--------|----------|---------|
-| `click` | Button press, link activation | `maestro.send('click', 'deploy-btn', { env: 'prod' })` |
-| `submit` | Form submission | `maestro.send('submit', 'config-form', { name: 'api', timeout: 30 })` |
-| `change` | Input value changed | `maestro.send('change', 'search-input', { value: 'query text' })` |
-| `select` | Option selected | `maestro.send('select', 'priority', { value: 'high' })` |
-| `toggle` | Boolean switch | `maestro.send('toggle', 'dark-mode', { enabled: true })` |
-| `dismiss` | Modal/alert dismissed | `maestro.send('dismiss', 'alert-42', { acknowledged: true })` |
-| `navigate` | Tab/page switch in canvas | `maestro.send('navigate', 'settings-tab', { tab: 'advanced' })` |
-| `custom` | Anything else | `maestro.send('custom', 'drag-drop', { from: 'A', to: 'B' })` |
-
-Custom actions beyond this list are fine. The `action` field is freeform.
-
-## Canvas Rules
-
-HTML must be **self-contained**:
-- Inline all CSS (in `<style>` tags or inline styles)
-- Inline all JavaScript (in `<script>` tags or inline handlers)
-- Embed images as base64 data URIs or use emoji/Unicode
-- No external stylesheets, scripts, or images (CDN links will be blocked by the sandbox)
-- No relative asset paths
-
-The iframe sandbox allows `allow-scripts` only:
-- JavaScript works
-- No form submission to external URLs (use `event.preventDefault()` + `maestro.send()`)
-- No popups, no same-origin access, no top-level navigation
-- No `alert()`, `confirm()`, or `prompt()` (use in-page UI instead)
-
-## Managing Canvas Files
-
-### Organize with subdirectories
-```bash
-mkdir -p ~/.aimaestro/agents/$AIM_AGENT_ID/canvas/reports
-mkdir -p ~/.aimaestro/agents/$AIM_AGENT_ID/canvas/forms
-mkdir -p ~/.aimaestro/agents/$AIM_AGENT_ID/canvas/dashboards
+```
+[CANVAS] <file>: User <action> '<element>' on <file> with data: {...}
 ```
 
-### List files (API)
-```bash
-curl -s http://localhost:23000/api/agents/$AIM_AGENT_ID/canvas
-```
-Returns:
-```json
-{
-  "files": [
-    { "name": "dashboard.html", "path": "dashboard.html", "size": 4200, "modifiedAt": "2026-05-18T15:00:00.000Z" },
-    { "name": "weekly.html", "path": "reports/weekly.html", "size": 8100, "modifiedAt": "2026-05-18T14:00:00.000Z" }
-  ]
-}
-```
-
-### Read a file (API)
-```bash
-curl -s "http://localhost:23000/api/agents/$AIM_AGENT_ID/canvas?file=dashboard.html"
-```
-
-### Update a file
-Overwrite it. The dashboard picks up changes when the user refreshes or re-selects the file.
-
-### Delete a file
-```bash
-rm ~/.aimaestro/agents/$AIM_AGENT_ID/canvas/old-page.html
-```
-
-### Delete all interactions (clean slate)
-```bash
-rm -f ~/.aimaestro/agents/$AIM_AGENT_ID/canvas/interactions/*.json
-```
-
-## Receiving Interactions
-
-When a user interacts with your canvas page, two things happen:
-
-1. **JSON file stored** at `~/.aimaestro/agents/<id>/canvas/interactions/<timestamp>-<uuid>.json`
-2. **Terminal notification** appears in your session: `[CANVAS] file.html: User action 'element' on file.html with data: {...}`
-
-### Interaction file format
-
-```json
-{
-  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "timestamp": "2026-05-18T15:30:00.000Z",
-  "canvasFile": "dashboard.html",
-  "action": "submit",
-  "element": "approve-button",
-  "data": { "comments": "Looks good", "rating": 5 },
-  "summary": "User submit 'approve-button' on dashboard.html with data: {\"comments\":\"Looks good\",\"rating\":5}"
-}
-```
-
-### Reading interactions
+The notification is the user telling you to do something: carry out what the control means (run the tests, save the settings, apply the selection), then update the page if its state changed. The data in the notification is cut at 200 characters; if it ends in `...`, read the interaction file for the full payload:
 
 ```bash
-# List all interaction files (newest first)
-ls -1r ~/.aimaestro/agents/$AIM_AGENT_ID/canvas/interactions/
-
-# Read the most recent interaction
-ls -1r ~/.aimaestro/agents/$AIM_AGENT_ID/canvas/interactions/ | head -1 | \
-  xargs -I{} cat ~/.aimaestro/agents/$AIM_AGENT_ID/canvas/interactions/{}
-
-# Read all interactions via API
-curl -s http://localhost:23000/api/agents/$AIM_AGENT_ID/canvas/interactions
-
-# Read with limit
+ls -1r ~/.aimaestro/agents/$AIM_AGENT_ID/canvas/interactions/ | head -1      # newest file
 curl -s "http://localhost:23000/api/agents/$AIM_AGENT_ID/canvas/interactions?limit=10"
 ```
 
-### Processing [CANVAS] notifications
+Each file holds `id`, `timestamp`, `canvasFile`, `action`, `element`, `data` and `summary`. Remove handled files with `rm` when you want a clean slate.
 
-When you see a `[CANVAS]` notification, you should act on it. The notification format is:
+## API
 
-```
-[CANVAS] <canvasFile>: User <action> '<element>' on <canvasFile> with data: {<json>}
-```
-
-**Your workflow:**
-1. Parse the notification or read the latest interaction file for full details
-2. Decide what to do based on action type + element + data
-3. Execute the action (run commands, update files, call APIs, send AMP messages, etc.)
-4. Optionally update the canvas page to reflect the new state
-
-### Response patterns by action type
-
-**click** -- Execute the operation the button represents:
-```
-[CANVAS] panel.html: User click 'run-tests' on panel.html with data: {"suite":"unit"}
--> Run the test suite, then update the canvas with results
+```bash
+curl -s http://localhost:23000/api/agents/$AIM_AGENT_ID/canvas                    # list pages
+curl -s "http://localhost:23000/api/agents/$AIM_AGENT_ID/canvas?file=reports/weekly.html"   # read one
 ```
 
-**submit** -- Process the form data:
-```
-[CANVAS] config.html: User submit 'config-form' on config.html with data: {"endpoint":"https://api.example.com","timeout":30}
--> Save the configuration, confirm success on canvas
-```
-
-**select** -- Apply the selection:
-```
-[CANVAS] dashboard.html: User select 'time-range' on dashboard.html with data: {"value":"7d"}
--> Regenerate the dashboard with 7-day data, update canvas
-```
-
-**toggle** -- Enable or disable the feature:
-```
-[CANVAS] settings.html: User toggle 'auto-deploy' on settings.html with data: {"enabled":true}
--> Enable auto-deploy in your configuration
-```
-
-**dismiss** -- Acknowledge and clean up:
-```
-[CANVAS] alerts.html: User dismiss 'alert-memory' on alerts.html with data: {"acknowledged":true}
--> Mark alert as seen, no further action needed
-```
-
-## Security
-
-- Never put credentials, tokens, or secrets in `data` payloads (stored as plaintext JSON)
-- Canvas files are writable only by the agent, read-only to the user via the dashboard
-- File paths must not contain `..` or be absolute (path traversal protection enforced by the API)
-- The `data` field is stored as-is; sanitize if displaying user-provided data back in HTML
-
-## Quick Reference
-
-| Task | Command |
-|------|---------|
-| Create a page | `cat > ~/.aimaestro/agents/$AIM_AGENT_ID/canvas/page.html << 'HTMLEOF' ... HTMLEOF` |
-| Create a subdirectory | `mkdir -p ~/.aimaestro/agents/$AIM_AGENT_ID/canvas/reports/` |
-| List files (API) | `curl -s http://localhost:23000/api/agents/$AIM_AGENT_ID/canvas` |
-| Read a file (API) | `curl -s "http://localhost:23000/api/agents/$AIM_AGENT_ID/canvas?file=page.html"` |
-| Update a page | Overwrite the HTML file |
-| Delete a page | `rm ~/.aimaestro/agents/$AIM_AGENT_ID/canvas/page.html` |
-| Read interactions | `ls -1r ~/.aimaestro/agents/$AIM_AGENT_ID/canvas/interactions/` |
-| Read interactions (API) | `curl -s http://localhost:23000/api/agents/$AIM_AGENT_ID/canvas/interactions` |
-| Clear interactions | `rm -f ~/.aimaestro/agents/$AIM_AGENT_ID/canvas/interactions/*.json` |
-| Fire action from HTML | `maestro.send('click', 'btn-name', { key: 'value' })` |
-
-## Protocol Reference
-
-Full AAP specification: https://agentactions.org
-GitHub: https://github.com/agentmessaging/agent-actions
+Paths are relative to the canvas directory; the API rejects `..` and absolute paths. Protocol specification: https://agentactions.org
