@@ -22,7 +22,7 @@ Manage AI agents through the AI Maestro CLI. This skill provides commands for cr
 
 **Script:** `aimaestro-agent.sh` (Bash, macOS/Linux)
 
-**Installation:** `./install-agent-cli.sh`
+**Installation:** run `install-agent-cli.sh` from your AI Maestro checkout (the folder AI Maestro was installed from)
 
 **Requirements:** macOS or Linux, Bash 4.0+, tmux 3.0+, jq, curl
 

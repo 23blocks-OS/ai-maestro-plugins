@@ -1,6 +1,6 @@
 ---
 name: docs-search
-description: PROACTIVELY search the generated codebase documentation BEFORE implementing anything. Use it to confirm existing function signatures, APIs, and patterns so new code matches what is already there. Also use when the user asks to "search docs", "find function", or "check API". Verify the signature before you write the call, not after the type error.
+description: Search this codebase's generated documentation for function signatures, APIs and established patterns. Use before calling or extending a function, class or API you have not read in this session, so the call matches what exists, and when the user asks to "search docs", "find function" or "check API".
 allowed-tools: Bash
 compatibility: Requires AI Maestro (aimaestro.dev) with Bash shell access
 metadata:
@@ -212,7 +212,7 @@ Without searching docs first, you will:
 
 This skill relies on an internal helper script that provides shared utility functions:
 
-- **`docs-helper.sh`** - Sourced by the `docs-*.sh` tool scripts. Provides documentation-specific API functions (`docs_query`, `docs_index`) and initialization logic. Located alongside the tool scripts in `~/.local/bin/` (installed) or `plugin/src/scripts/` (source). If tool scripts fail with "common.sh not found", re-run the installer (`./install-doc-tools.sh`).
+- **`docs-helper.sh`** - Sourced by the `docs-*.sh` tool scripts. Provides documentation-specific API functions (`docs_query`, `docs_index`) and initialization logic. Located alongside the tool scripts in `~/.local/bin/` (installed) or `plugin/src/scripts/` (source). If tool scripts fail with "common.sh not found", re-run `install-doc-tools.sh` from your AI Maestro checkout (the folder AI Maestro was installed from; `update-aimaestro.sh` also reinstalls it).
 
 ## Error Handling
 
@@ -220,7 +220,7 @@ This skill relies on an internal helper script that provides shared utility func
 - Check PATH: `which docs-search.sh`
 - Verify scripts installed: `ls -la ~/.local/bin/docs-*.sh`
 - Scripts are installed to `~/.local/bin/` which should be in your PATH
-- If not found, run: `./install-doc-tools.sh`
+- If not found, run `install-doc-tools.sh` from your AI Maestro checkout
 
 **API connection fails:**
 - Ensure AI Maestro is running: `curl http://127.0.0.1:23000/api/hosts/identity`
@@ -237,9 +237,9 @@ This skill relies on an internal helper script that provides shared utility func
 
 ## Installation
 
-If commands are not found:
+If commands are not found, run the installer from your AI Maestro checkout (the folder AI Maestro was installed from):
 ```bash
-./install-doc-tools.sh
+cd <your AI Maestro checkout> && ./install-doc-tools.sh
 ```
 
 This installs scripts to `~/.local/bin/`.

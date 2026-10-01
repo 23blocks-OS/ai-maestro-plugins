@@ -1,10 +1,10 @@
 ---
 name: agent-identity
-description: Authenticate AI agents with auth servers using the Agent Identity (AID) protocol. Supports Ed25519 identity documents, proof of possession, OAuth 2.0 token exchange, and scoped JWT tokens. Self-contained — works independently without other protocols.
+description: Authenticate an AI agent with an auth server using the Agent Identity (AID) protocol, with Ed25519 identity documents, proof of possession, OAuth 2.0 token exchange and scoped JWTs. Use when an agent must sign in to an AID-enabled server, get or refresh an access token, or prove its identity to an API. Self-contained; works without other protocols.
 license: MIT
 compatibility: Requires curl, jq, openssl (3.x for Ed25519), and base64 CLI tools. macOS and Linux supported.
 metadata:
-  version: "0.3.0"
+  version: "0.3.1"
   homepage: "https://agentids.org"
   repository: "https://github.com/agentmessaging/agent-identity"
 ---
@@ -206,8 +206,8 @@ A signed JSON document proving the agent's identity:
   "public_key": "-----BEGIN PUBLIC KEY-----\n...",
   "key_algorithm": "Ed25519",
   "fingerprint": "SHA256:abc123...",
-  "issued_at": "2026-03-23T00:00:00Z",
-  "expires_at": "2026-09-23T00:00:00Z",
+  "issued_at": "2030-01-01T00:00:00Z",
+  "expires_at": "2030-07-01T00:00:00Z",
   "signature": "base64-ed25519-signature"
 }
 ```

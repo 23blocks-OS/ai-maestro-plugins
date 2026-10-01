@@ -1,6 +1,6 @@
 ---
 name: memory-search
-description: PROACTIVELY search your long-term memory BEFORE starting new work and BEFORE changing anything. Use at the START of any non-trivial task to recall prior decisions and facts, and before deploying, moving, deleting or reconfiguring something to see what depends on it (memory-search.sh --about <entity>). Also use when the user asks to "search memory", "what did we discuss", "remember when", "find previous conversation", or "check history". Your memory is valuable — check it first rather than starting from scratch.
+description: Search this agent's long-term memory of past sessions: decisions, facts, corrections, and what depends on an entity. Use when a task touches something with history (a repo, service, environment or decision from earlier sessions), before deploying, moving, deleting or reconfiguring something to see what depends on it (memory-search.sh --about <entity>), and when the user asks "what did we discuss", "remember when", "search memory", "find previous conversation" or "check history".
 allowed-tools: Bash
 compatibility: Requires AI Maestro (aimaestro.dev) with Bash shell access
 metadata:
@@ -179,7 +179,7 @@ docs-search.sh "feature"         # What do docs say?
 
 This skill relies on an internal helper script that provides shared utility functions:
 
-- **`memory-helper.sh`** - Sourced by the `memory-*.sh` tool scripts. Provides memory-specific API functions (`memory_query`, `init_memory`) and initialization logic. Located alongside the tool scripts in `~/.local/bin/` (installed) or `plugin/src/scripts/` (source). If tool scripts fail with "common.sh not found", re-run the installer (`./install-memory-tools.sh`).
+- **`memory-helper.sh`** - Sourced by the `memory-*.sh` tool scripts. Provides memory-specific API functions (`memory_query`, `init_memory`) and initialization logic. Located alongside the tool scripts in `~/.local/bin/` (installed) or `plugin/src/scripts/` (source). If tool scripts fail with "common.sh not found", re-run `install-memory-tools.sh` from your AI Maestro checkout (the folder AI Maestro was installed from; `update-aimaestro.sh` also reinstalls it).
 
 ## Error Handling
 
@@ -195,9 +195,9 @@ Then search docs as fallback.
 
 ## Installation
 
-If commands are not found:
+If commands are not found, run the installer from your AI Maestro checkout (the folder AI Maestro was installed from):
 ```bash
-./install-memory-tools.sh
+cd <your AI Maestro checkout> && ./install-memory-tools.sh
 ```
 
 This installs scripts to `~/.local/bin/`.
