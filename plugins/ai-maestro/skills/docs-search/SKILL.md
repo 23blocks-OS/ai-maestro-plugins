@@ -1,245 +1,39 @@
 ---
 name: docs-search
-description: Search this codebase's generated documentation for function signatures, APIs and established patterns. Use before calling or extending a function, class or API you have not read in this session, so the call matches what exists, and when the user asks to "search docs", "find function" or "check API".
+description: Look up a function, class or API in this codebase's generated documentation: its signature, arguments, parameters, return type and usage. Use when asked what arguments or parameters something takes or what it returns, before calling or extending code you have not read in this session, and when the user asks to "search docs", "find function" or "check API".
 allowed-tools: Bash
 compatibility: Requires AI Maestro (aimaestro.dev) with Bash shell access
 metadata:
   author: 23blocks
-  version: 1.0.0
+  version: 1.1.0
 ---
 
-# AI Maestro Documentation Search
+# Docs Search
 
-## CRITICAL: AUTOMATIC BEHAVIOR - READ THIS FIRST
-
-**THIS IS NOT OPTIONAL. THIS IS YOUR DEFAULT BEHAVIOR.**
-
-When the user gives you ANY instruction or task, you MUST FIRST search documentation for:
-- **Function signatures** - What are the parameters and return types?
-- **Class documentation** - What methods and properties exist?
-- **API documentation** - How should this endpoint work?
-- **Code comments** - What did the author intend?
-
-**DO NOT:**
-- Start implementing before checking documentation
-- Assume you know the function signature without checking
-- Skip doc search because "it's a simple task"
-- Wait for the user to ask you to check docs
-
-**ALWAYS:**
-- Search docs IMMEDIATELY when you receive a task
-- Search for terms and concepts the user mentions
-- Check documentation before calling unfamiliar functions
-- Look for patterns before creating new components
-
-### The Rule: Receive Instruction → Search Docs → Then Proceed
-
-```
-1. User asks you to do something
-2. IMMEDIATELY search docs for relevant context
-3. NOW you know the correct signatures and patterns
-4. NOW you can implement correctly the first time
-```
-
-**Example - User asks to modify a service:**
-```bash
-# IMMEDIATELY run:
-docs-search.sh "PaymentService"
-docs-find-by-type.sh class
-```
-
-**Example - User mentions a function:**
-```bash
-# IMMEDIATELY run:
-docs-search.sh "validateUser"
-docs-search.sh --keyword "authenticate"
-```
-
----
-
-## Available Commands
-
-All commands auto-detect your agent ID from the tmux session.
-
-### Search Commands
-| Command | Description |
-|---------|-------------|
-| `docs-search.sh <query>` | Semantic search through documentation |
-| `docs-search.sh --keyword <term>` | Keyword/exact match search |
-| `docs-find-by-type.sh <type>` | Find docs by type (function, class, module, etc.) |
-| `docs-get.sh <doc-id>` | Get full document with all sections |
-| `docs-list.sh` | List all indexed documents |
-| `docs-stats.sh` | Get documentation index statistics |
-
-### Indexing Commands
-| Command | Description |
-|---------|-------------|
-| `docs-index.sh [project-path]` | Full index documentation from project |
-| `docs-index-delta.sh [project-path]` | **Delta index** - only index new and modified files |
-
-## What to Search Based on User Instruction
-
-| User Says | IMMEDIATELY Search |
-|-----------|-------------------|
-| "Create a service for X" | `docs-search.sh "service"`, `docs-find-by-type.sh class` |
-| "Call the Y function" | `docs-search.sh "Y"`, `docs-search.sh --keyword "Y"` |
-| "Implement authentication" | `docs-search.sh "authentication"`, `docs-search.sh "auth"` |
-| "Fix the Z method" | `docs-search.sh "Z" --keyword`, `docs-find-by-type.sh function` |
-| Any API/function name | `docs-search.sh "<name>" --keyword` |
-
-## Usage Examples
-
-### Search for Documentation
+AI Maestro indexes the doc comments of your agent's project (JSDoc, RDoc, Python docstrings, TypeScript interfaces, READMEs, markdown guides) and serves them per agent. The scripts find your agent from the tmux session.
 
 ```bash
-# Semantic search - finds conceptually related docs
-docs-search.sh "authentication flow"
-docs-search.sh "how to validate user input"
-docs-search.sh "database connection pooling"
-
-# Keyword search - exact term matching
-docs-search.sh --keyword "authenticate"
-docs-search.sh --keyword "UserController"
+docs-search.sh "<query>"              # semantic search (default limit 10; --limit N)
+docs-search.sh --keyword "<name>"     # exact name match, best for a known function or class
+docs-get.sh <doc-id>                  # full document for an id from the search results
+docs-find-by-type.sh <type>           # function | class | module | interface | component | constant | readme | guide
+docs-list.sh [--limit N]              # all indexed documents (default 50)
+docs-stats.sh                         # index size; 0 documents means the project was never indexed
 ```
 
-### Find by Document Type
+A result gives the documented intent and signature; the source file is still the authority on current behaviour.
+
+## Keeping the index current
 
 ```bash
-# Find all function documentation
-docs-find-by-type.sh function
-
-# Find all class documentation
-docs-find-by-type.sh class
-
-# Find all module/concern documentation
-docs-find-by-type.sh module
-
-# Find all interface documentation
-docs-find-by-type.sh interface
+docs-index-delta.sh [project-path]    # new and modified files only; use after code changes
+docs-index.sh [project-path]          # full re-index
 ```
 
-### Get Full Document
+Without a path, both use the agent's working directory.
 
-```bash
-# After finding a doc ID from search results
-docs-get.sh doc-abc123
+## If the command fails
 
-# Shows full content including all sections
-```
-
-### List and Stats
-
-```bash
-# List all indexed documents
-docs-list.sh
-
-# Get index statistics
-docs-stats.sh
-```
-
-### Index Documentation
-
-```bash
-# Index current project (auto-detected from agent config)
-docs-index.sh
-
-# Index specific project
-docs-index.sh /path/to/project
-```
-
-### Delta Index Documentation
-
-```bash
-# Delta index - only process new and modified files (much faster)
-docs-index-delta.sh
-
-# Delta index a specific project
-docs-index-delta.sh /path/to/project
-```
-
-Use delta indexing for incremental updates after code changes. Use full `docs-index.sh` for a complete re-index.
-
-## Document Types
-
-The following document types are recognized:
-
-| Type | Description | Sources |
-|------|-------------|---------|
-| `function` | Function/method documentation | JSDoc, RDoc, docstrings |
-| `class` | Class documentation | Class-level comments |
-| `module` | Module/namespace documentation | Module comments |
-| `interface` | Interface/type documentation | TypeScript interfaces |
-| `component` | React/Vue component documentation | Component comments |
-| `constant` | Documented constants | Constant comments |
-| `readme` | README files | README.md, README.txt |
-| `guide` | Guide/tutorial documentation | docs/ folder |
-
-## Integration with Other Skills
-
-Docs-search works best when combined with other skills:
-
-### Combined Search Pattern (RECOMMENDED)
-
-When you receive ANY user instruction:
-
-```bash
-# 1. Search your memory first
-memory-search.sh "topic"
-
-# 2. Search documentation
-docs-search.sh "topic"
-
-# 3. Check code structure
-graph-describe.sh ComponentName
-```
-
-This gives you complete context:
-- **Memory**: What was discussed before?
-- **Docs**: What does the documentation say?
-- **Graph**: What is the code structure?
-
-## Why This Matters
-
-Without searching docs first, you will:
-- Use wrong function signatures (then get runtime errors)
-- Miss existing implementations (then duplicate code)
-- Violate documented patterns (then create inconsistency)
-- Misunderstand APIs (then build the wrong thing)
-
-**Doc search takes 1 second. Redoing work takes hours.**
-
-## Helper Scripts
-
-This skill relies on an internal helper script that provides shared utility functions:
-
-- **`docs-helper.sh`** - Sourced by the `docs-*.sh` tool scripts. Provides documentation-specific API functions (`docs_query`, `docs_index`) and initialization logic. Located alongside the tool scripts in `~/.local/bin/` (installed) or `plugin/src/scripts/` (source). If tool scripts fail with "common.sh not found", re-run `install-doc-tools.sh` from your AI Maestro checkout (the folder AI Maestro was installed from; `update-aimaestro.sh` also reinstalls it).
-
-## Error Handling
-
-**Script not found:**
-- Check PATH: `which docs-search.sh`
-- Verify scripts installed: `ls -la ~/.local/bin/docs-*.sh`
-- Scripts are installed to `~/.local/bin/` which should be in your PATH
-- If not found, run `install-doc-tools.sh` from your AI Maestro checkout
-
-**API connection fails:**
-- Ensure AI Maestro is running: `curl http://127.0.0.1:23000/api/hosts/identity`
-- Ensure documentation has been indexed: `docs-stats.sh`
-- If no docs indexed, run: `docs-index.sh`
-
-**Documentation is empty:**
-- Check project has documented code (JSDoc, docstrings, comments)
-- Verify project path is correct
-- Re-index with: `docs-index.sh /path/to/project`
-
-**No results found:**
-- Inform the user: "No documentation found for X - proceeding with code analysis, but documentation may need to be generated."
-
-## Installation
-
-If commands are not found, run the installer from your AI Maestro checkout (the folder AI Maestro was installed from):
-```bash
-cd <your AI Maestro checkout> && ./install-doc-tools.sh
-```
-
-This installs scripts to `~/.local/bin/`.
+- `command not found` or `common.sh not found`: run `./install-doc-tools.sh` from the AI Maestro checkout (`update-aimaestro.sh` also reinstalls the tools).
+- Connection errors: AI Maestro is not reachable on this host.
+- No results and `docs-stats.sh` shows an empty index: run `docs-index.sh`, or tell the user the project has no generated docs and read the code instead.

@@ -1,7 +1,6 @@
 # Task: [TASK NAME]
 
-> After 50+ tool calls, your original goals can drift.
-> This file is your "working memory on disk" - read it before major decisions.
+> Working memory on disk: read it when starting a phase or resuming.
 
 ---
 
@@ -105,15 +104,3 @@ Questions that need answers during this task:
 - [Important observations]
 - [Things to remember]
 - [Gotchas discovered]
-
----
-
-<!--
-INSTRUCTIONS:
-1. Copy this template to your project root
-2. Fill in the task name and goal
-3. Customize phases for your specific task
-4. Update status after completing each phase
-5. Re-read this file before major decisions
-6. Log ALL errors - they help prevent repetition
--->

@@ -1,11 +1,11 @@
 {
   "name": "ai-maestro",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "AI agent orchestration — memory search, code graph, AMP messaging, docs search, task planning",
   "output": "./plugins/ai-maestro",
   "plugin": {
     "name": "ai-maestro",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "AI agent orchestration: agent messaging (AMP), identity (AID), canvas pages, memory, docs and code graph search, agent management and planning",
     "author": {
       "name": "23blocks"
