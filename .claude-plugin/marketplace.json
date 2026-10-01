@@ -15,7 +15,7 @@
       "name": "ai-maestro",
       "source": "./plugins/ai-maestro",
       "description": "AI agent orchestration: agent messaging (AMP), identity (AID), canvas pages, memory, docs and code graph search, agent management and planning",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "author": {
         "name": "23blocks"
       },

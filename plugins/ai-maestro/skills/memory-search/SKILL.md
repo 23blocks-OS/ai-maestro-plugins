@@ -1,6 +1,6 @@
 ---
 name: memory-search
-description: Search this agent's long-term memory of past sessions: decisions, facts, corrections, and what depends on an entity. Use when a task touches something with history (a repo, service, environment or decision from earlier sessions), before deploying, moving, deleting or reconfiguring something to see what depends on it (memory-search.sh --about <entity>), and when the user asks "what did we discuss", "remember when", "search memory", "find previous conversation" or "check history".
+description: "Search this agent's long-term memory of past sessions: decisions, facts, corrections, and what depends on an entity. Use when a task touches something with history (a repo, service, environment or decision from earlier sessions), before deploying, moving, deleting or reconfiguring something to see what depends on it (memory-search.sh --about <entity>), and when the user asks \"what did we discuss\", \"remember when\", \"search memory\", \"find previous conversation\" or \"check history\"."
 allowed-tools: Bash
 compatibility: Requires AI Maestro (aimaestro.dev) with Bash shell access
 metadata:
