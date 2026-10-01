@@ -1,8 +1,7 @@
 # Findings: [TASK NAME]
 
-> This is your knowledge base for the current task.
-> The 2-Action Rule: After every 2 search/view operations, write findings here.
-> Visual content (screenshots, PDFs) doesn't persist - write it down NOW.
+> What you learned during this task. Write down anything you would need after
+> losing context, especially facts read from images, PDFs or browser pages.
 
 ---
 
@@ -123,14 +122,3 @@ Problems found during research:
 **Summary of what we learned:**
 
 [2-3 sentences synthesizing the key findings that inform the implementation approach]
-
----
-
-<!--
-INSTRUCTIONS:
-1. Copy this template to your project root
-2. Update after EVERY 2 search/view operations
-3. Don't wait - visual content fades from context
-4. Cross-reference with task_plan.md questions
-5. Use this to inform decisions in task_plan.md
--->

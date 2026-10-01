@@ -88,12 +88,11 @@ Agent: backend-api
 
 ## Delete Agent — What It Does
 
-1. Validates agent exists
-2. Kills tmux session if running
-3. Removes agent from registry
-4. (Future: Optionally preserves folder/data based on flags)
+1. Validates the agent exists and that `--confirm` was passed
+2. Calls `DELETE /api/agents/<id>` (a soft delete): kills the agent's tmux sessions, marks it deleted in the registry and removes its AMP messaging directory
+3. Leaves the project folder on disk
 
-**Note:** The `--keep-folder` and `--keep-data` flags are reserved for future API support. Currently the API doesn't support these options.
+**Note:** `--keep-folder` and `--keep-data` are parsed but not sent to the server; they currently change nothing.
 
 ---
 

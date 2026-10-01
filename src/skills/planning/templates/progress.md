@@ -138,14 +138,3 @@ Use this when you feel lost:
 **Next Steps:**
 - [Next action 1]
 - [Next action 2]
-
----
-
-<!--
-INSTRUCTIONS:
-1. Copy this template to your project root
-2. Update during the session, not just at the end
-3. Log all errors - they help prevent repetition
-4. Use 5-Question Reboot when feeling lost
-5. Cross-reference with task_plan.md and findings.md
--->
