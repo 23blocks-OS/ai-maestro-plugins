@@ -3,6 +3,12 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.4.0] - 2026-10-05
+
+### Changed
+- **Status line row 2 matches the dashboard header** (`amp-statusline.sh`, from agentmessaging/claude-plugin#38): `model | ctx (+ /compact hint) | $cost | effort | cache warm Nm or cold | last turn Nm/h/d ago`, each part shown only when known. The line refreshes every 60 s while idle (`refreshInterval`, set by `--install`, existing installs updated without a prompt).
+- **The status line reports the live session values** (session cost, context, effort, cache) to AI Maestro at `POST /api/agents/<id>/status-snapshot`, at most every 10 s, so the dashboard shows the same numbers as the terminal.
+
 ## [1.3.2] - 2026-10-05
 
 ### Changed

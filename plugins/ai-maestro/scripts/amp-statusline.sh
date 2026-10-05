@@ -4,8 +4,9 @@
 # =============================================================================
 #
 # Displays your AMP agent name, address and folder, the unread message count,
-# the model, the context size and the cost in the Claude Code status bar (the
-# lines at the bottom of the terminal).
+# the model, context size, cost, effort, prompt-cache state and time since the
+# last turn in the Claude Code status bar (the lines at the bottom of the
+# terminal), and reports the same facts to AI Maestro for the dashboard.
 #
 # Usage:
 #   amp-statusline.sh --install     # Install into Claude Code settings
@@ -36,24 +37,38 @@ case "${1:-}" in
 
         # Check if statusLine already exists
         EXISTING=$(jq -r '.statusLine.command // empty' "$SETTINGS_FILE" 2>/dev/null)
-        if [ -n "$EXISTING" ]; then
+        SAME_SCRIPT=0
+        if [ -n "$EXISTING" ] && [ "$(basename "$EXISTING")" = "amp-statusline.sh" ]; then
+            SAME_SCRIPT=1
+        fi
+        if [ -n "$EXISTING" ] && [ "$SAME_SCRIPT" = "0" ]; then
             echo "Status line already configured: $EXISTING"
             echo ""
             read -r -p "Replace with AMP status line? [y/N] " CONFIRM
             [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ] && exit 0
         fi
 
-        jq --arg cmd "$SCRIPT_PATH" '.statusLine = { type: "command", command: $cmd }' \
+        # refreshInterval re-runs the script every 60 s while the session is idle,
+        # so "cache warm N m" and "last turn N m ago" stay current. A value the
+        # user already set is kept. When the command is already this script
+        # (an upgrade) nothing is asked: the other settings are kept as they are.
+        jq --arg cmd "$SCRIPT_PATH" \
+            '.statusLine = ((.statusLine // {}) + { type: "command", command: $cmd, refreshInterval: (.statusLine.refreshInterval // 60) })' \
             "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
 
-        echo "AMP status line installed."
+        if [ "$SAME_SCRIPT" = "1" ]; then
+            echo "AMP status line updated."
+        else
+            echo "AMP status line installed."
+        fi
         echo ""
         echo "  Script:   $SCRIPT_PATH"
         echo "  Settings: $SETTINGS_FILE"
         echo ""
         echo "Restart Claude Code to see it. The status bar will show:"
-        echo "  your-agent@tenant.provider | N unread"
-        echo "  Model | ctx 42k (4%) | \$cost   (adds /compact soon at 150k, /compact now over 200k)"
+        echo "  name · your-agent@tenant.provider · folder | N unread"
+        echo "  Model | ctx 42k (4%) | \$cost | effort high | cache warm 12m | last turn 7m ago"
+        echo "  (adds /compact soon at 150k, /compact now over 200k)"
         exit 0
         ;;
 
@@ -111,6 +126,15 @@ CWD=$(echo "$input" | jq -r '.workspace.current_dir // empty')
 # Claude Code's native session name (set by `claude --name` / `/rename`). Present
 # only when a custom or AI-generated title exists; used below as an identity hint.
 SESSION_NAME=$(echo "$input" | jq -r '.session_name // empty')
+# Shown on row 2 and reported to AI Maestro (all optional; absent means unknown).
+SESSION_ID=$(echo "$input" | jq -r '.session_id // empty')
+MODEL_ID=$(echo "$input" | jq -r '.model.id // empty')
+CTX_WINDOW=$(echo "$input" | jq -r '.context_window.context_window_size // empty')
+EFFORT=$(echo "$input" | jq -r '.effort.level // empty')
+# prompt_cache.warm is a boolean: "true", "false", or empty when the block is absent.
+CACHE_WARM=$(echo "$input" | jq -r 'if .prompt_cache == null or .prompt_cache.warm == null then "" else (.prompt_cache.warm | tostring) end')
+CACHE_EXPIRES=$(echo "$input" | jq -r '.prompt_cache.expires_at // empty')
+TRANSCRIPT=$(echo "$input" | jq -r '.transcript_path // empty')
 
 # --- Resolve AMP agent ---
 AGENTS_BASE="${HOME}/.agent-messaging/agents"
@@ -315,5 +339,78 @@ else
     CTX="${CTX_SIZE}"
 fi
 
+# --- Row 2: the same facts the dashboard chat header shows ---
+# model | ctx | cost | effort | cache | last turn. A part is left out when unknown.
+NOW_S=$(date +%s)
+case "$CACHE_EXPIRES" in ''|*[!0-9]*) CACHE_EXPIRES="" ;; esac
+case "$CTX_WINDOW" in ''|*[!0-9]*) CTX_WINDOW="" ;; esac
+
+ROW2="$MODEL | ctx $CTX | \$$COST_FMT"
+[ -n "$EFFORT" ] && ROW2="$ROW2 | effort $EFFORT"
+
+# Cache: warm with time left, or cold. Warm but past its expiry is cold.
+if [ "$CACHE_WARM" = "true" ] && [ -n "$CACHE_EXPIRES" ]; then
+    if [ "$CACHE_EXPIRES" -gt "$NOW_S" ]; then
+        ROW2="$ROW2 | cache warm $(( (CACHE_EXPIRES - NOW_S + 59) / 60 ))m"
+    else
+        ROW2="$ROW2 | cache cold"
+    fi
+elif [ "$CACHE_WARM" = "false" ]; then
+    ROW2="$ROW2 | cache cold"
+fi
+
+# Last turn: the transcript was last written this long ago. Shown after 2 minutes
+# of quiet; the idle refresh (refreshInterval) keeps it current.
+if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+    # GNU stat first: on Linux `stat -f` means "filesystem status" and prints a
+    # block of text (and succeeds in part), so the BSD form must come second.
+    MTIME=$(stat -c %Y "$TRANSCRIPT" 2>/dev/null || stat -f %m "$TRANSCRIPT" 2>/dev/null)
+    case "$MTIME" in ''|*[!0-9]*) MTIME="" ;; esac
+    if [ -n "$MTIME" ] && [ $(( NOW_S - MTIME )) -gt 120 ]; then
+        # Same units as the dashboard header: 12m, 3h, 2d.
+        IDLE_M=$(( (NOW_S - MTIME) / 60 ))
+        if [ "$IDLE_M" -ge 1440 ]; then IDLE_TXT="$(( IDLE_M / 1440 ))d"
+        elif [ "$IDLE_M" -ge 60 ]; then IDLE_TXT="$(( IDLE_M / 60 ))h"
+        else IDLE_TXT="${IDLE_M}m"; fi
+        ROW2="$ROW2 | last turn ${IDLE_TXT} ago"
+    fi
+fi
+
+# --- Report this session's status to AI Maestro (the dashboard header reads it) ---
+# Best effort, backgrounded, silent, never blocks the render. At most once every
+# 10 s per agent, and at once when the cost, effort or cache state changed.
+if [ -n "$AGENT_UUID" ] && [ -d "${AGENTS_BASE}/${AGENT_UUID}" ]; then
+    _snap_cache="${AGENTS_BASE}/${AGENT_UUID}/.last-status-snapshot"
+    _snap_key="${COST}|${EFFORT}|${CACHE_WARM}"
+    _snap_last=$(cat "$_snap_cache" 2>/dev/null)
+    _snap_ts="${_snap_last%%|*}"
+    _snap_prev="${_snap_last#*|}"
+    case "$_snap_ts" in ''|*[!0-9]*) _snap_ts=0 ;; esac
+    if [ "$_snap_prev" != "$_snap_key" ] || [ $(( NOW_S - _snap_ts )) -ge 10 ]; then
+        echo "${NOW_S}|${_snap_key}" > "$_snap_cache" 2>/dev/null
+        _cost_num="$COST"
+        case "$_cost_num" in ''|*[!0-9.]*|*.*.*) _cost_num=0 ;; esac
+        _snap_json=$(jq -n -c \
+            --arg sessionId "$SESSION_ID" --arg model "$MODEL" --arg modelId "$MODEL_ID" \
+            --argjson contextTokens "${CTX_TOKENS:-0}" --arg contextWindow "$CTX_WINDOW" \
+            --argjson contextPercent "${PCT:-0}" --argjson cost "$_cost_num" \
+            --arg effort "$EFFORT" --arg cacheWarm "$CACHE_WARM" --arg cacheExpiresAt "$CACHE_EXPIRES" \
+            --arg exceeds "$OVER_200K" --argjson ts "${NOW_S}000" \
+            '{sessionId: (if $sessionId == "" then null else $sessionId end),
+              model: $model, modelId: (if $modelId == "" then null else $modelId end),
+              contextTokens: $contextTokens,
+              contextWindow: (if $contextWindow == "" then null else ($contextWindow | tonumber) end),
+              contextPercent: $contextPercent, cost: $cost,
+              effort: (if $effort == "" then null else $effort end),
+              cacheWarm: (if $cacheWarm == "true" then true elif $cacheWarm == "false" then false else null end),
+              cacheExpiresAt: (if $cacheExpiresAt == "" then null else ($cacheExpiresAt | tonumber) end),
+              exceeds200k: ($exceeds == "true"), ts: $ts}' 2>/dev/null)
+        if [ -n "$_snap_json" ]; then
+            curl -s -m 1 -X POST "${AMP_MAESTRO_URL:-http://localhost:23000}/api/agents/${AGENT_UUID}/status-snapshot" \
+                -H 'Content-Type: application/json' -d "$_snap_json" >/dev/null 2>&1 &
+        fi
+    fi
+fi
+
 echo -e "$AMP_PART"
-echo -e "$MODEL | ctx $CTX | \$$COST_FMT"
+echo -e "$ROW2"
