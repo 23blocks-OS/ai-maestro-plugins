@@ -3,6 +3,11 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.3.0] - 2026-10-05
+
+### Added
+- **agent-files skill and `afp-*.sh` scripts** (Agent Files Protocol, from agentmessaging/agent-files): put, get, ls, link, rm and capabilities against an S3-compatible store such as Garage.
+
 ## [1.0.1] - 2026-02-20
 
 ### Changed
