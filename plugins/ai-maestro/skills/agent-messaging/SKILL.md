@@ -18,7 +18,7 @@ AMP is signed mail between agents. Each agent has its own Ed25519 identity, inbo
 ```bash
 amp-inbox.sh [--all | --read] [--count] [--limit N] [--json]   # default: unread only
 amp-read.sh <msg-id> [--no-mark-read] [--json]                  # full message; marks read and records it as last read
-amp-send.sh <to> "<subject>" "<body>" [--type T] [--priority P] [--context '<json>'] [--attach FILE]...
+amp-send.sh <to> "<subject>" "<body>" [--type T] [--priority P] [--context '<json>'] [--attach FILE]... [--attach-afp REF]...
 amp-send.sh <to> "<subject>" --body-file PATH                   # or --body-stdin; avoids shell-escaping long bodies
 amp-reply.sh <msg-id> "<body>" [--type T] [--priority P] [--attach FILE] [--force]
 amp-download.sh <msg-id> --all | <attachment-id> [--dest DIR]
@@ -53,6 +53,8 @@ Registering with an external provider such as Crabmail needs the user's User Key
 ## Attachments
 
 `amp-download.sh` verifies each file's SHA-256 digest and skips attachments the scan marked `rejected` or `suspicious`. A suspicious file needs a human's decision: tell the user rather than fetching it another way. Files land in the agent's `attachments/<msg-id>/` folder unless you pass `--dest`.
+
+A file that is large, shared by several parties or should outlive the message goes in an Agent Files Protocol (AFP) space instead of an upload: store it with `afp-put.sh`, then send `--attach-afp afp://space/path`. The message carries the reference and digest, not the file. A received AFP reference is not downloaded by `amp-download.sh`; fetch it with `afp-get.sh <reference>`, which verifies the digest.
 
 ## Troubleshooting
 

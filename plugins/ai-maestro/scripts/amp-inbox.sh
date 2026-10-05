@@ -172,10 +172,14 @@ while read -r msg_b64; do
     status_icon=$(status_indicator "$status")
 
     # Check for attachments
-    att_count=$(echo "$msg" | jq '.payload.attachments // [] | length')
+    afp_att_count=$(echo "$msg" | jq '[.payload.attachments // [] | .[] | select(.storage == "afp")] | length')
+    att_count=$(( $(echo "$msg" | jq '.payload.attachments // [] | length') - afp_att_count ))
     att_indicator=""
     if [ "$att_count" -gt 0 ]; then
         att_indicator=" [${att_count} file(s)]"
+    fi
+    if [ "$afp_att_count" -gt 0 ]; then
+        att_indicator="${att_indicator} [${afp_att_count} AFP ref(s)]"
     fi
 
     # Truncate subject if too long

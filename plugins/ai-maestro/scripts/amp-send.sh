@@ -12,6 +12,12 @@
 #   amp-send alice "Hello" "How are you?"
 #   amp-send backend-api@23blocks.crabmail.ai "Deploy" "Ready for deploy" --priority high
 #   amp-send bob --type task "Review PR" "Please review PR #42"
+#   amp-send alice "Report" "Attached" --attach-afp afp://shared/2026/10/report.pdf
+#
+# Attachments are either uploaded to the provider (--attach FILE) or referenced
+# in an Agent Files Protocol space (--attach-afp REF, "storage": "afp"). An AFP
+# attachment carries a reference and a digest, not the file, and skips the
+# provider upload, scan and size limits.
 #
 # =============================================================================
 
@@ -56,6 +62,8 @@ REPLY_TO=""
 THREAD_ID=""
 CONTEXT="null"
 ATTACH_FILES=()
+ATTACH_AFP=()
+AFP_INCLUDE_LINK=false
 
 show_help() {
     echo "Usage: amp-send <recipient> <subject> <message> [options]"
@@ -80,6 +88,13 @@ show_help() {
     echo "  --attach, -a FILE         Attach a file (repeatable, max ${AMP_MAX_ATTACHMENTS} files,"
     echo "                              max $(format_file_size "$AMP_MAX_ATTACHMENT_SIZE")/file,"
     echo "                              max $(format_file_size "$AMP_MAX_TOTAL_ATTACHMENT_SIZE") total)"
+    echo "  --attach-afp REF          Attach a file stored in an AFP space (repeatable). REF is"
+    echo "                              afp://space/path or a reference object (JSON) from"
+    echo "                              afp-put / afp-link. Carries a reference and digest only;"
+    echo "                              no upload, scan or size limit. Needs the afp scripts"
+    echo "                              for a bare afp:// reference."
+    echo "  --afp-link                Include a time-limited download link (1 hour) in AFP"
+    echo "                              attachments given as a bare afp:// reference"
     echo "  --id UUID                 Operate as this agent (UUID from config.json)"
     echo "  --help, -h                Show this help"
     echo ""
@@ -123,6 +138,14 @@ while [[ $# -gt 0 ]]; do
         --attach|-a)
             ATTACH_FILES+=("$2")
             shift 2
+            ;;
+        --attach-afp)
+            ATTACH_AFP+=("$2")
+            shift 2
+            ;;
+        --afp-link)
+            AFP_INCLUDE_LINK=true
+            shift
             ;;
         --body-file)
             BODY_FILE="$2"
@@ -263,6 +286,17 @@ if [ ${#ATTACH_FILES[@]} -gt 0 ]; then
     done
 fi
 
+# AFP attachments (storage: "afp"): validate and resolve before anything is
+# uploaded or sent. They carry a reference and a digest, so the provider limits
+# above (count, size, MIME) do not apply to them.
+if [ ${#ATTACH_AFP[@]} -gt 0 ]; then
+    for afp_input in "${ATTACH_AFP[@]}"; do
+        afp_att=$(afp_attachment_from_ref "$afp_input" "$AFP_INCLUDE_LINK") || exit 1
+        echo "  AFP reference: $(echo "$afp_att" | jq -r '.ref') ($(format_file_size "$(echo "$afp_att" | jq -r '.size')"))"
+        ATTACHMENTS_JSON=$(echo "$ATTACHMENTS_JSON" | jq --argjson att "$afp_att" '. + [$att]')
+    done
+fi
+
 # Determine routing
 ROUTE=$(get_message_route "$RECIPIENT")
 
@@ -365,7 +399,10 @@ if [ ${#ATTACH_FILES[@]} -gt 0 ]; then
         done
     fi
 
-    # Inject attachments array into message payload
+fi
+
+# Inject attachments array (provider and AFP) into the message payload
+if [ "$(echo "$ATTACHMENTS_JSON" | jq 'length')" -gt 0 ]; then
     MESSAGE_JSON=$(echo "$MESSAGE_JSON" | jq --argjson atts "$ATTACHMENTS_JSON" '.payload.attachments = $atts')
 fi
 

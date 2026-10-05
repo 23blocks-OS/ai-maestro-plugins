@@ -82,6 +82,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --json, -j           Output raw JSON"
             echo "  --sent, -s           Read from sent folder instead of inbox"
             echo "  --download           Auto-download clean attachments after display"
+            echo "                         (AFP references are never fetched automatically; use afp-get)"
             echo "  --help, -h           Show this help"
             echo ""
             echo "Examples:"
@@ -184,6 +185,10 @@ echo ""
 # Show attachments if present
 attachments=$(echo "$MESSAGE" | jq '.payload.attachments // []')
 att_count=$(echo "$attachments" | jq 'length')
+# AFP attachments (storage: "afp") are references into an Agent Files Protocol
+# space, fetched with afp-get.sh. Everything else is a provider attachment.
+afp_att_count=$(echo "$attachments" | jq '[.[] | select(.storage == "afp")] | length')
+prov_att_count=$((att_count - afp_att_count))
 
 if [ "$att_count" -gt 0 ]; then
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -193,6 +198,25 @@ if [ "$att_count" -gt 0 ]; then
 
     while read -r att_b64; do
         att=$(echo "$att_b64" | base64 -d)
+
+        if [ "$(echo "$att" | jq -r '.storage // "provider"')" = "afp" ]; then
+            afp_ref=$(echo "$att" | jq -r '.ref // ""')
+            afp_digest=$(echo "$att" | jq -r '.digest // ""')
+            afp_size=$(echo "$att" | jq -r '.size // 0')
+            afp_type=$(echo "$att" | jq -r '.content_type // "unknown"')
+            afp_name=$(sanitize_filename "$(echo "$att" | jq -r '.filename // "unnamed_file"')" 2>/dev/null)
+            [[ "$afp_size" =~ ^[0-9]+$ ]] || afp_size=0
+            echo "  📎 ${afp_name} ($(format_file_size "$afp_size"), ${afp_type})"
+            # The reference comes from another party: show it only if it is well formed.
+            if afp_validate_ref "$afp_ref" && [[ "$afp_digest" =~ $AFP_DIGEST_REGEX ]]; then
+                echo "     AFP reference: ${afp_ref} (${afp_digest:0:19}..., $(format_file_size "$afp_size"))"
+                echo "     Fetch with: afp-get.sh ${afp_ref}"
+            else
+                echo "     AFP reference: invalid or missing (not shown); do not fetch"
+            fi
+            continue
+        fi
+
         att_id=$(echo "$att" | jq -r '.id')
         att_filename=$(echo "$att" | jq -r '.filename')
         att_size=$(echo "$att" | jq -r '.size')
@@ -238,12 +262,15 @@ echo ""
 echo "Actions:"
 echo "  Reply:    amp-reply ${id} \"Your reply message\""
 echo "  Delete:   amp-delete ${id}"
-if [ "$att_count" -gt 0 ]; then
+if [ "$prov_att_count" -gt 0 ]; then
     echo "  Download: amp-download ${id} --all"
+fi
+if [ "$afp_att_count" -gt 0 ]; then
+    echo "  AFP files: fetch each reference above with afp-get.sh <reference>"
 fi
 
 # Auto-download attachments if requested
-if [ "$AUTO_DOWNLOAD" = true ] && [ "$att_count" -gt 0 ]; then
+if [ "$AUTO_DOWNLOAD" = true ] && [ "$prov_att_count" -gt 0 ]; then
     echo ""
     echo "Auto-downloading attachments..."
     "${SCRIPT_DIR}/amp-download.sh" "$id" --all
