@@ -3,6 +3,11 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.3.2] - 2026-10-05
+
+### Changed
+- **Status line row 1 shows the agent's name, address and folder** (`amp-statusline.sh`, from agentmessaging/claude-plugin#37): `name · address · folder | N unread`, with the home directory as `~`, shortened to fit the pane width (folder to its last two parts, then dropped, then the name). Row 2 is unchanged.
+
 ## [1.3.1] - 2026-10-05
 
 ### Added

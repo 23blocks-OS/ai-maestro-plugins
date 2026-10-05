@@ -3,8 +3,9 @@
 # AMP Status Line for Claude Code
 # =============================================================================
 #
-# Displays your AMP agent identity and unread message count in the
-# Claude Code status bar (the line at the bottom of the terminal).
+# Displays your AMP agent name, address and folder, the unread message count,
+# the model, the context size and the cost in the Claude Code status bar (the
+# lines at the bottom of the terminal).
 #
 # Usage:
 #   amp-statusline.sh --install     # Install into Claude Code settings
@@ -212,7 +213,7 @@ fi
 # Only PATCH when the cost has GROWN (monotonic): avoids spamming the API every
 # render and avoids the value dipping to ~0 when a new session starts. (Lifetime
 # accumulation across sessions is a later OTLP concern.)
-if [ -n "$AGENT_UUID" ] && [ -n "$COST" ]; then
+if [ -n "$AGENT_UUID" ] && [ -n "$COST" ] && [ -d "${AGENTS_BASE}/${AGENT_UUID}" ]; then
     _cost_cache="${AGENTS_BASE}/${AGENT_UUID}/.last-cost"
     _last_cost=$(cat "$_cost_cache" 2>/dev/null || echo 0)
     if awk -v c="$COST" -v l="$_last_cost" 'BEGIN{exit !(c+0 > l+0)}' 2>/dev/null; then
@@ -223,13 +224,69 @@ if [ -n "$AGENT_UUID" ] && [ -n "$COST" ]; then
 fi
 
 # --- Build status line ---
+# Row 1 names the agent: name, AMP address and folder, then the unread count.
+# Row 2 (below) is the model, context size and cost.
+#
+# The name is the one resolved above, else the one in the agent's config. The
+# folder is the working directory with $HOME shown as ~. In a narrow pane the
+# row is shortened in this order: the folder keeps its last two components, then
+# the folder is dropped, then the name (the address already holds it). The width
+# comes from COLUMNS, which Claude Code sets before it runs this script.
+if [ -z "$AGENT_NAME" ] && [ -n "$AGENT_UUID" ] && [ -f "${AGENTS_BASE}/${AGENT_UUID}/config.json" ]; then
+    AGENT_NAME=$(jq -r '.agent.name // empty' "${AGENTS_BASE}/${AGENT_UUID}/config.json" 2>/dev/null)
+fi
+
+FOLDER=""
+if [ -n "$CWD" ]; then
+    TILDE='~'   # shown literally: the folder is for display, not for use as a path
+    case "$CWD" in
+        "$HOME") FOLDER="$TILDE" ;;
+        "$HOME"/*) FOLDER="${TILDE}/${CWD#"$HOME"/}" ;;
+        *) FOLDER="$CWD" ;;
+    esac
+fi
+
 if [ -n "$AGENT_ADDRESS" ]; then
-    AMP_PART="$AGENT_ADDRESS"
     if [ "$UNREAD" -gt 0 ]; then
-        AMP_PART="$AMP_PART | \033[33m${UNREAD} unread\033[0m"
+        UNREAD_PLAIN="${UNREAD} unread"
+        UNREAD_PART="\033[33m${UNREAD} unread\033[0m"
     else
-        AMP_PART="$AMP_PART | 0 unread"
+        UNREAD_PLAIN="0 unread"
+        UNREAD_PART="0 unread"
     fi
+
+    # Join the non-empty parts with " · ".
+    _join() {
+        local out="" p
+        for p in "$@"; do
+            [ -n "$p" ] && out="${out:+$out · }$p"
+        done
+        printf '%s' "$out"
+    }
+    # The last two path components, "…/a/b", for a long folder.
+    _short_folder() {
+        local f="$1" tail
+        tail=$(printf '%s' "$f" | awk -F/ '{ n=NF; if (n>2) print $(n-1) "/" $n; else print $0 }')
+        if [ "$tail" = "$f" ]; then printf '%s' "$f"; else printf '…/%s' "$tail"; fi
+    }
+    # Length in characters (UTF-8 aware where the locale allows).
+    _len() { printf '%s' "$1" | wc -m | tr -d ' '; }
+
+    COLS="${COLUMNS:-0}"
+    case "$COLS" in ''|*[!0-9]*) COLS=0 ;; esac
+    SUFFIX_LEN=$(( $(_len " | ${UNREAD_PLAIN}") ))
+
+    ROW1=$(_join "$AGENT_NAME" "$AGENT_ADDRESS" "$FOLDER")
+    if [ "$COLS" -gt 0 ] && [ $(( $(_len "$ROW1") + SUFFIX_LEN )) -gt "$COLS" ]; then
+        ROW1=$(_join "$AGENT_NAME" "$AGENT_ADDRESS" "$(_short_folder "$FOLDER")")
+    fi
+    if [ "$COLS" -gt 0 ] && [ $(( $(_len "$ROW1") + SUFFIX_LEN )) -gt "$COLS" ]; then
+        ROW1=$(_join "$AGENT_NAME" "$AGENT_ADDRESS")
+    fi
+    if [ "$COLS" -gt 0 ] && [ $(( $(_len "$ROW1") + SUFFIX_LEN )) -gt "$COLS" ]; then
+        ROW1="$AGENT_ADDRESS"
+    fi
+    AMP_PART="${ROW1} | ${UNREAD_PART}"
 else
     AMP_PART="AMP: not configured (run amp-init)"
 fi
