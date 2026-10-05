@@ -1767,6 +1767,147 @@ is_mime_blocked() {
     return 1
 }
 
+# =============================================================================
+# AFP attachments (storage: "afp")
+# =============================================================================
+# An AFP attachment names a file in an Agent Files Protocol space. No bytes pass
+# through the provider, so none of the upload, scan or size-limit code applies.
+# See spec/04-messages.md "AFP Attachments" and github.com/agentmessaging/agent-files.
+
+AFP_REF_REGEX='^afp://[a-z0-9][a-z0-9-]{0,62}/[a-zA-Z0-9._/-]+$'
+AFP_DIGEST_REGEX='^sha256:[0-9a-f]{64}$'
+
+# Validate an AFP reference (afp://<space>/<path>).
+# Rejects '..' and '.' segments, empty segments, a trailing slash and paths
+# over 512 characters. The character set already excludes '%' and '\'.
+afp_validate_ref() {
+    local ref="$1"
+    [[ "$ref" =~ $AFP_REF_REGEX ]] || return 1
+    local path="${ref#afp://}"
+    path="${path#*/}"
+    [ ${#path} -le 512 ] || return 1
+    case "/${path}/" in
+        *//*|*/../*|*/./*) return 1 ;;
+    esac
+    return 0
+}
+
+# Find an AFP script: next to this helper first, then on PATH.
+afp_find_script() {
+    local name="$1"
+    if [ -n "${SCRIPT_DIR:-}" ] && [ -x "${SCRIPT_DIR}/${name}" ]; then
+        echo "${SCRIPT_DIR}/${name}"
+    elif command -v "$name" >/dev/null 2>&1; then
+        command -v "$name"
+    else
+        return 1
+    fi
+}
+
+# Build an AFP attachment object from a reference.
+# Args: ref-or-json [include_link]
+#   ref-or-json   "afp://space/path", or a reference object as printed by
+#                 afp-put.sh or afp-link.sh ({ref, digest, size, ...})
+#   include_link  "true" keeps a download URL in the attachment
+# A bare reference needs the afp scripts: afp-link.sh supplies the digest and
+# size, afp-ls.sh the content type. Prints the attachment JSON on stdout,
+# errors on stderr, returns 1 on failure.
+afp_attachment_from_ref() {
+    local input="$1"
+    local with_link="${2:-false}"
+    local ref="" digest="" size="" endpoint="" url="" ctype="" fname=""
+
+    if [[ "$input" == "{"* ]]; then
+        if ! echo "$input" | jq -e 'type == "object"' >/dev/null 2>&1; then
+            echo "Error: AFP reference is not a valid JSON object" >&2
+            return 1
+        fi
+        ref=$(echo "$input" | jq -r '.ref // empty')
+        digest=$(echo "$input" | jq -r '.digest // empty')
+        size=$(echo "$input" | jq -r '.size // empty')
+        endpoint=$(echo "$input" | jq -r '.endpoint // empty')
+        url=$(echo "$input" | jq -r '.url // empty')
+        ctype=$(echo "$input" | jq -r '.content_type // empty')
+        fname=$(echo "$input" | jq -r '.filename // empty')
+    else
+        ref="$input"
+    fi
+
+    if ! afp_validate_ref "$ref"; then
+        echo "Error: Invalid AFP reference: ${ref}" >&2
+        echo "  Expected afp://<space>/<path> with no '..', empty segments or encoded separators." >&2
+        return 1
+    fi
+
+    local afp_path="${ref#afp://}"
+    local afp_space="${afp_path%%/*}"
+    afp_path="${afp_path#*/}"
+
+    # A bare reference, or an object without digest and size, is completed from the store.
+    if [ -z "$digest" ] || [ -z "$size" ]; then
+        local link_script link_json link_ttl="5m"
+        link_script=$(afp_find_script afp-link.sh) || {
+            echo "Error: afp-link.sh not found. Install the agent-files skill, or pass a reference object that includes digest and size." >&2
+            return 1
+        }
+        [ "$with_link" = "true" ] && link_ttl="1h"
+        link_json=$("$link_script" "$ref" --ttl "$link_ttl" 2>/dev/null) || {
+            echo "Error: could not read ${ref} from its AFP space: $(echo "$link_json" | jq -r '.error.message // empty' 2>/dev/null)" >&2
+            return 1
+        }
+        if ! echo "$link_json" | jq -e '.ok == true' >/dev/null 2>&1; then
+            echo "Error: could not read ${ref} from its AFP space" >&2
+            return 1
+        fi
+        digest=$(echo "$link_json" | jq -r '.digest // empty')
+        size=$(echo "$link_json" | jq -r '.size // empty')
+        [ -z "$endpoint" ] && endpoint=$(echo "$link_json" | jq -r '.endpoint // empty')
+        if [ "$with_link" = "true" ] && [ -z "$url" ]; then
+            url=$(echo "$link_json" | jq -r '.url // empty')
+        fi
+        if [ -z "$ctype" ]; then
+            local ls_script
+            if ls_script=$(afp_find_script afp-ls.sh); then
+                ctype=$("$ls_script" --space "$afp_space" --prefix "$afp_path" --limit 5 2>/dev/null \
+                    | jq -r --arg ref "$ref" '[.items[]? | select(.ref == $ref) | .content_type // empty] | first // empty' 2>/dev/null || true)
+            fi
+        fi
+    fi
+
+    if [[ ! "$digest" =~ $AFP_DIGEST_REGEX ]]; then
+        echo "Error: AFP attachment digest must be sha256:<64 hex characters>" >&2
+        return 1
+    fi
+    if [[ ! "$size" =~ ^[0-9]+$ ]]; then
+        echo "Error: AFP attachment size must be a whole number of bytes" >&2
+        return 1
+    fi
+    if [ -n "$endpoint" ] && [[ ! "$endpoint" =~ ^https?://[^[:space:]]+$ ]]; then
+        echo "Error: AFP endpoint must be an http(s) URL" >&2
+        return 1
+    fi
+    if [ -n "$url" ] && [[ ! "$url" =~ ^https?://[^[:space:]]+$ ]]; then
+        echo "Error: AFP link must be an http(s) URL" >&2
+        return 1
+    fi
+
+    local filename
+    filename=$(sanitize_filename "$(basename "${fname:-$afp_path}")") || return 1
+    [ -z "$ctype" ] && ctype="application/octet-stream"
+
+    jq -n \
+        --arg filename "$filename" \
+        --arg content_type "$ctype" \
+        --argjson size "$size" \
+        --arg digest "$digest" \
+        --arg ref "$ref" \
+        --arg endpoint "$endpoint" \
+        --arg url "$url" \
+        '{storage: "afp", filename: $filename, content_type: $content_type, size: $size, digest: $digest, ref: $ref}
+         + (if $endpoint == "" then {} else {endpoint: $endpoint} end)
+         + (if $url == "" then {} else {url: $url} end)'
+}
+
 # Upload an attachment via provider API
 # Args: filepath, api_url, api_key
 # Returns: JSON with attachment metadata (id, upload_url, etc.)

@@ -63,6 +63,9 @@ show_help() {
     echo ""
     echo "Options:"
     echo "  --all             Download all attachments from the message"
+    echo "                     (AFP references are not downloaded: it prints the afp-get.sh"
+    echo "                      command for each and skips them; a message with only AFP"
+    echo "                      references exits 0)"
     echo "  --dest, -d DIR    Destination directory (default: ~/.agent-messaging/attachments/<msg-id>/)"
     echo "  --sent, -s        Download from sent folder instead of inbox"
     echo "  --id UUID         Operate as this agent (UUID from config.json)"
@@ -143,6 +146,34 @@ ATT_COUNT=$(echo "$ATTACHMENTS" | jq 'length')
 if [ "$ATT_COUNT" -eq 0 ]; then
     echo "No attachments found in message ${MESSAGE_ID}"
     exit 0
+fi
+
+# AFP attachments (storage: "afp") are references, not provider uploads. They are
+# never downloaded here: print how to fetch each with afp-get.sh and skip them.
+# They count as neither downloaded nor failed, and a message that carries only
+# AFP references exits 0 after printing the hints.
+AFP_SKIPPED=0
+AFP_COUNT=$(echo "$ATTACHMENTS" | jq '[.[] | select(.storage == "afp")] | length')
+if [ "$AFP_COUNT" -gt 0 ]; then
+    while read -r afp_att; do
+        afp_ref=$(echo "$afp_att" | jq -r '.ref // ""')
+        afp_digest=$(echo "$afp_att" | jq -r '.digest // ""')
+        if afp_validate_ref "$afp_ref" && [[ "$afp_digest" =~ $AFP_DIGEST_REGEX ]]; then
+            echo "  AFP reference (not downloaded here): ${afp_ref}"
+            echo "     Fetch with: afp-get.sh ${afp_ref}"
+        else
+            echo "  AFP reference is invalid or missing: not shown, do not fetch"
+        fi
+        AFP_SKIPPED=$((AFP_SKIPPED + 1))
+    done < <(echo "$ATTACHMENTS" | jq -c '.[] | select(.storage == "afp")')
+    ATTACHMENTS=$(echo "$ATTACHMENTS" | jq '[.[] | select(.storage != "afp")]')
+    ATT_COUNT=$(echo "$ATTACHMENTS" | jq 'length')
+    if [ "$ATT_COUNT" -eq 0 ] && [ "$DOWNLOAD_ALL" = true ]; then
+        echo ""
+        echo "No provider attachments to download. Fetch the AFP references above with afp-get.sh."
+        exit 0
+    fi
+    echo ""
 fi
 
 # Default destination
@@ -243,5 +274,8 @@ fi
 echo ""
 if [ "$DOWNLOAD_ALL" = true ]; then
     echo "Results: ${DOWNLOADED} downloaded, ${FAILED} failed"
+    if [ "$AFP_SKIPPED" -gt 0 ]; then
+        echo "         ${AFP_SKIPPED} AFP reference(s) skipped (use afp-get.sh)"
+    fi
 fi
 echo "Download directory: ${DEST_DIR}"

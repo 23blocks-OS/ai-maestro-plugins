@@ -3,6 +3,11 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.3.1] - 2026-10-05
+
+### Added
+- **AFP attachments in AMP.** `amp-send.sh --attach-afp` sends a `storage: "afp"` attachment (a reference to a file in an Agent Files Protocol space, no bytes through the provider). `amp-read`, `amp-inbox` and `amp-download` show AFP references and print the `afp-get.sh` hint. From agentmessaging/claude-plugin#36.
+
 ## [1.3.0] - 2026-10-05
 
 ### Added
