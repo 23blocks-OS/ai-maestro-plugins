@@ -327,6 +327,25 @@ AMP_MAX_TOTAL_ATTACHMENT_SIZE="${AMP_MAX_TOTAL_ATTACHMENT_SIZE:-104857600}"  # 1
 # AI Maestro connection
 AMP_MAESTRO_URL="${AMP_MAESTRO_URL:-http://localhost:23000}"
 
+# Tell a local AI Maestro that a message just landed in a same-host recipient's
+# inbox, so it wakes the agent now instead of at its next inbox sweep. The inbox
+# file is already written and stays the source of truth: this is a best-effort
+# nudge. It never prints, never fails, and never waits (backgrounded, 3 s cap),
+# so with no server running, or an older one, sending behaves exactly as before.
+# Opt out with AMP_DOORBELL=0.
+amp_ring_doorbell() {
+    local recipient="$1" msg_id="$2" body
+    [ "${AMP_DOORBELL:-1}" = "0" ] && return 0
+    [ -n "$recipient" ] && [ -n "$msg_id" ] || return 0
+    command -v curl >/dev/null 2>&1 || return 0
+    command -v jq >/dev/null 2>&1 || return 0
+    body=$(jq -nc --arg r "$recipient" --arg m "$msg_id" '{recipient:$r,messageId:$m}' 2>/dev/null) || return 0
+    ( curl -s -m 3 --connect-timeout 1 -o /dev/null -X POST \
+        "${AMP_MAESTRO_URL}/api/messages/doorbell" \
+        -H 'Content-Type: application/json' -d "$body" >/dev/null 2>&1 & ) >/dev/null 2>&1
+    return 0
+}
+
 # Provider domain (AMP v1)
 AMP_PROVIDER_DOMAIN="${AMP_PROVIDER_DOMAIN:-aimaestro.local}"
 AMP_LOCAL_DOMAIN="${AMP_PROVIDER_DOMAIN}"
