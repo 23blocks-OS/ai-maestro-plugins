@@ -590,6 +590,10 @@ if [ "$ROUTE" = "local" ]; then
 
             echo "$DELIVERY_MSG" > "${RECIPIENT_INBOX}/${SENDER_DIR}/${MSG_ID}.json"
 
+            # Wake the recipient now if a local AI Maestro is running (best effort, silent)
+
+            amp_ring_doorbell "${RECIPIENT_UUID:-$ADDR_NAME}" "$MSG_ID"
+
             echo "✅ Message sent (local filesystem delivery)"
             echo ""
             echo "  To:       ${FULL_RECIPIENT}"
@@ -742,6 +746,10 @@ if [ "$ROUTE" = "local" ]; then
                 fi
 
                 echo "$DELIVERY_MSG" > "${RECIPIENT_INBOX}/${SENDER_DIR}/${MSG_ID}.json"
+
+                # Wake the recipient now if a local AI Maestro is running (best effort, silent)
+
+                amp_ring_doorbell "${RECIPIENT_UUID:-$ADDR_NAME}" "$MSG_ID"
 
                 echo "✅ Message sent (local filesystem delivery)"
                 echo ""
