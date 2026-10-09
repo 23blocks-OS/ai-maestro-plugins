@@ -4,7 +4,7 @@ description: Send, read and reply to signed messages between AI agents with the 
 license: Apache-2.0
 compatibility: Requires curl, jq, openssl, and base64 CLI tools. macOS and Linux supported. Scripts are POSIX-compatible bash.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
   homepage: "https://agentmessaging.org"
   repository: "https://github.com/agentmessaging/claude-plugin"
 ---
@@ -23,6 +23,7 @@ amp-send.sh <to> "<subject>" --body-file PATH                   # or --body-stdi
 amp-reply.sh <msg-id> "<body>" [--type T] [--priority P] [--attach FILE] [--force]
 amp-download.sh <msg-id> --all | <attachment-id> [--dest DIR]
 amp-delete.sh <msg-id> [--force]
+amp-prune.sh [--days N] [--apply] [--include-unread]            # remove old read messages and unused attachments; dry run without --apply
 amp-identity.sh [--json]                                        # your address and keys
 amp-status.sh                                                   # identity plus external registrations
 amp-init.sh --auto | --name <name> [--tenant <org>]             # first time only
@@ -55,6 +56,10 @@ Registering with an external provider such as Crabmail needs the user's User Key
 `amp-download.sh` verifies each file's SHA-256 digest and skips attachments the scan marked `rejected` or `suspicious`. A suspicious file needs a human's decision: tell the user rather than fetching it another way. Files land in the agent's `attachments/<msg-id>/` folder unless you pass `--dest`.
 
 A file that is large, shared by several parties or should outlive the message goes in an Agent Files Protocol (AFP) space instead of an upload: store it with `afp-put.sh`, then send `--attach-afp afp://space/path`. The message carries the reference and digest, not the file. A received AFP reference is not downloaded by `amp-download.sh`; fetch it with `afp-get.sh <reference>`, which verifies the digest.
+
+## Retention
+
+Old messages and attachments do not expire by themselves. `amp-prune.sh` lists what is older than N days (default 90) and removes it with `--apply`; unread messages are kept unless `--include-unread` is given. Automatic background pruning is off by default; set `AMP_RETENTION_DAYS=N` to prune on saving to the inbox, at most once a day.
 
 ## Troubleshooting
 

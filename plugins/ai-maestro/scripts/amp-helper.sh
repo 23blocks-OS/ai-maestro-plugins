@@ -1201,6 +1201,28 @@ sanitize_address_for_path() {
     echo "$address" | sed 's/[@.]/_/g' | sed 's/[^a-zA-Z0-9_-]//g'
 }
 
+# Opportunistic retention: at most once per 24 hours per agent, prune old read
+# messages and unreferenced attachments in the background, but ONLY when the owner has
+# set AMP_RETENTION_DAYS to a number of days. It is off by default: messages are the
+# agents' conversation record, and on a real fleet (236 agents, 407 MB) the default 90 days
+# would have deleted 8,061 messages to free 18 MB. Silent, and never fails the caller.
+maybe_prune_old_messages() {
+    local days="${AMP_RETENTION_DAYS:-0}"
+    [[ "$days" =~ ^[0-9]+$ ]] || return 0
+    [ "$days" -ge 1 ] || return 0
+    [ -d "$AMP_DIR" ] || return 0
+    local stamp="${AMP_DIR}/.last-prune"
+    # Fresh stamp: already ran within the last 24 hours.
+    if [ -f "$stamp" ] && [ -n "$(find "$stamp" -mmin -1440 -print 2>/dev/null)" ]; then
+        return 0
+    fi
+    local prune="${BASH_SOURCE[0]%/*}/amp-prune.sh"
+    [ -x "$prune" ] || return 0
+    touch "$stamp" 2>/dev/null || return 0
+    ( AMP_DIR="$AMP_DIR" "$prune" --apply --days "$days" </dev/null >/dev/null 2>&1 & ) >/dev/null 2>&1 || true
+    return 0
+}
+
 # Save message to inbox (organized by sender)
 save_to_inbox() {
     local message_json="$1"
@@ -1270,6 +1292,8 @@ save_to_inbox() {
         local _tmp_db="${replay_db}.tmp.$$"
         awk -F'|' -v c="$_cutoff" '$2+0 >= c' "$replay_db" > "$_tmp_db" 2>/dev/null && mv "$_tmp_db" "$replay_db" || rm -f "$_tmp_db"
     fi
+
+    maybe_prune_old_messages 2>/dev/null || true
 
     echo "$inbox_file"
 }

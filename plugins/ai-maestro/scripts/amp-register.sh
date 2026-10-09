@@ -384,6 +384,7 @@ if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
     # per-provider detail, and that is the authoritative list.
     if [ -f "$AMP_CONFIG" ]; then
         _cfg_tmp=$(mktemp)
+        trap 'rm -f "$_cfg_tmp"' EXIT
         if jq \
             --arg tenant "$TENANT" \
             --arg address "$ADDRESS" \
