@@ -172,7 +172,30 @@ elif [ -n "$CWD" ]; then
     # "piano-instructor", or a dev dir picking a random one of the agents there).
     # Pick the MOST SPECIFIC match (longest workingDirectory); if several tie, the cwd
     # is ambiguous, so show nothing rather than a wrong name.
-    MAESTRO_AGENT=$(curl -s --connect-timeout 1 "${AMP_MAESTRO_URL:-http://localhost:23000}/api/agents" 2>/dev/null | \
+    # The agent list changes rarely and every refresh asks for it, so keep the
+    # answer for 60 seconds in a per-user temp file.
+    # The first line of the cache file is the epoch second it was written.
+    _agents_cache="${TMPDIR:-/tmp}/amp-statusline-agents-$(id -u).json"
+    _agents_json=""
+    _now=$(date +%s)
+    if [ -f "$_agents_cache" ] && [ ! -L "$_agents_cache" ]; then
+        _cached_at=$(head -n 1 "$_agents_cache" 2>/dev/null)
+        if [[ "$_cached_at" =~ ^[0-9]+$ ]] && [ $((_now - _cached_at)) -ge 0 ] && [ $((_now - _cached_at)) -lt 60 ]; then
+            _agents_json=$(tail -n +2 "$_agents_cache" 2>/dev/null)
+        fi
+    fi
+    if [ -z "$_agents_json" ]; then
+        _agents_json=$(curl -s --connect-timeout 1 "${AMP_MAESTRO_URL:-http://localhost:23000}/api/agents" 2>/dev/null)
+        if [ -n "$_agents_json" ] && [ ! -L "$_agents_cache" ] && echo "$_agents_json" | jq -e . >/dev/null 2>&1; then
+            _agents_tmp=$(mktemp "${_agents_cache}.XXXXXX" 2>/dev/null)
+            if [ -n "$_agents_tmp" ]; then
+                { echo "$_now"; echo "$_agents_json"; } > "$_agents_tmp" 2>/dev/null && \
+                    mv "$_agents_tmp" "$_agents_cache" 2>/dev/null
+                rm -f "$_agents_tmp" 2>/dev/null
+            fi
+        fi
+    fi
+    MAESTRO_AGENT=$(echo "$_agents_json" | \
         jq -r --arg cwd "$CWD" '
             [ .agents[]
               | (.workingDirectory // .session.workingDirectory // "") as $wd
@@ -225,10 +248,21 @@ if [ -n "$AGENT_UUID" ]; then
 
     INBOX_DIR="${AGENTS_BASE}/${AGENT_UUID}/messages/inbox"
     if [ -d "$INBOX_DIR" ]; then
-        while IFS= read -r -d '' msg_file; do
-            STATUS=$(jq -r '.local.status // .metadata.status // "unread"' "$msg_file" 2>/dev/null)
-            [ "$STATUS" = "unread" ] && UNREAD=$((UNREAD + 1))
-        done < <(find "$INBOX_DIR" -name '*.json' -type f -print0 2>/dev/null)
+        # One jq process for the whole inbox (a few if the file list is huge).
+        # A file that is not valid JSON makes jq fail, so fall back to counting
+        # per file in that case.
+        _count_out=$(find "$INBOX_DIR" -name '*.json' -type f -print0 2>/dev/null | \
+            xargs -0 jq -n '[inputs | (.local.status // .metadata.status // "unread") | select(. == "unread")] | length' 2>/dev/null
+            echo "rc:${PIPESTATUS[1]}")
+        if [[ "$_count_out" == *"rc:0" ]]; then
+            UNREAD=$(printf '%s\n' "${_count_out%rc:*}" | awk '{s+=$1} END{print s+0}')
+        else
+            UNREAD=0
+            while IFS= read -r -d '' msg_file; do
+                STATUS=$(jq -r '.local.status // .metadata.status // "unread"' "$msg_file" 2>/dev/null)
+                [ "$STATUS" = "unread" ] && UNREAD=$((UNREAD + 1))
+            done < <(find "$INBOX_DIR" -name '*.json' -type f -print0 2>/dev/null)
+        fi
     fi
 fi
 
