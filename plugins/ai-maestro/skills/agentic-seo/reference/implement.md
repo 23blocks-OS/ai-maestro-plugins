@@ -1,5 +1,14 @@
 Implement full SEO on a page component from scratch. Follow this step-by-step process to bring a page from zero to fully SEO-optimized.
 
+## Contents
+
+- Inputs
+- Steps 1 to 11 (imports, constructor, lifecycle, setMetaTags, canonical, JSON-LD, cleanup, sitemap, prerender, template, social image)
+- Post-Implementation
+- Checklist Before Done
+
+SSR/SSG rule: JSON-LD must render during SSR/SSG (no browser-only guard) and be removed when the component is destroyed.
+
 **Important**: Use the site configuration gathered during first-time setup (`{SITE_NAME}`, `{DOMAIN}`, `{TWITTER_HANDLE}`, etc.). If not yet gathered, ask the user first per SKILL.md instructions.
 
 ## Inputs
@@ -72,12 +81,6 @@ private setMetaTags() {
     content: 'Compelling description with primary keyword. Explain the value. Include a call-to-action.'
   });
 
-  // Keywords: 5-15 relevant terms
-  this.metaService.updateTag({
-    name: 'keywords',
-    content: 'keyword1, keyword2, keyword3, {SITE_NAME}, related-term'
-  });
-
   this.metaService.updateTag({ name: 'robots', content: 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1' });
   this.metaService.updateTag({ name: 'author', content: '{SITE_NAME}' });
 
@@ -96,7 +99,7 @@ private setMetaTags() {
   this.metaService.updateTag({ property: 'og:image:alt', content: 'Descriptive alt text for the social image' });
   this.metaService.updateTag({ property: 'og:locale', content: 'en_US' });
 
-  // Twitter Card (6+ tags)
+  // X/Twitter card (6+ tags)
   this.metaService.updateTag({ name: 'twitter:card', content: 'summary_large_image' });
   this.metaService.updateTag({ name: 'twitter:site', content: '{TWITTER_HANDLE}' });
   this.metaService.updateTag({ name: 'twitter:creator', content: '{TWITTER_HANDLE}' });
@@ -132,15 +135,13 @@ CRITICAL: This method must NOT be wrapped in a browser-only guard (e.g., `isPlat
 
 Choose appropriate schema types based on the page content (see `reference/structured-data.md` for the full guide).
 
-Minimum schemas per page:
-1. One content-specific schema (SoftwareApplication, WebPage, FAQPage, etc.)
-2. BreadcrumbList
+Add only structured data that matches the visible content of the page; never add a schema just to reach a count. Typical choices: one content schema (SoftwareApplication, Article) and BreadcrumbList when the page has a hierarchy. WebPage markup produces no rich result. FAQPage is optional: Google stopped showing FAQ rich results on 2026-05-07 (see `reference/structured-data.md`).
 
 ```typescript
 private addStructuredData() {
   const contentSchema = {
     '@context': 'https://schema.org',
-    '@type': 'WebPage',  // or SoftwareApplication, FAQPage, etc.
+    '@type': 'WebPage',  // or SoftwareApplication, Article, etc.
     'name': 'Page Name',
     'description': 'Same as meta description',
     'url': '{DOMAIN}/ROUTE_PATH',
@@ -197,19 +198,10 @@ Add entry to sitemap.xml (at `{SITEMAP_PATH}`):
 <url>
   <loc>{DOMAIN}/ROUTE_PATH</loc>
   <lastmod>YYYY-MM-DD</lastmod>
-  <changefreq>weekly</changefreq>
-  <priority>0.7</priority>
 </url>
 ```
 
-Priority guidelines:
-- `1.0` -- Homepage only
-- `0.9` -- Main product pages
-- `0.8` -- Major feature pages
-- `0.7` -- Feature sub-pages, marketing pages
-- `0.6` -- Use cases, company pages
-- `0.5` -- Support, partners
-- `0.3` -- Legal pages
+Keep `<loc>`. Google ignores `<priority>` and `<changefreq>`; do not add them. Add `<lastmod>` only when the page content really changed: Google uses it "if it's consistently and verifiably (for example by comparing to the last modification of the page) accurate" (https://developers.google.com/search/docs/crawling-indexing/sitemaps/build-sitemap).
 
 ## Step 9 -- Update Prerender Configuration
 
@@ -241,9 +233,10 @@ to verify all 33 checks pass.
 - [ ] Constructor dependencies injected
 - [ ] `setMetaTags()` with all tags (using site config values)
 - [ ] `updateCanonicalLink()` helper
-- [ ] `addStructuredData()` with 2+ schemas, SSR-safe
+- [ ] `addStructuredData()` with schemas that match the visible content, SSR-safe
 - [ ] `removeStructuredData()` on destroy
 - [ ] Sitemap entry added
 - [ ] Route configured for prerendering
 - [ ] HTML template has proper h1, heading hierarchy, alt text
 - [ ] Social image noted (exists or flagged as TODO)
+- [ ] Rich Results Test and Schema Markup Validator run on a built page; errors fixed before reporting done

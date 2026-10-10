@@ -2,11 +2,21 @@
 
 Post-investigation review. The discipline that prevents library decay.
 
+## Contents
+
+- Purpose
+- When to run
+- Procedure
+- Patterns to follow
+- Anti-patterns
+- Example flow
+- On the bigger picture
+
 ## Purpose
 
 Before ending an investigation, review every SQL query that was executed during the session, decide which ones are reusable patterns, and promote those to library entries via `/agentic-sql add`. The remainder either go into a project-specific incident note or get discarded.
 
-This is the step that fails silently in every team that "intends to keep a SQL library." Cemri et al. (arxiv 2503.13657) catalogue this as failure mode FM-1.2 — diffusion of responsibility — and rank it among the top causes of multi-agent failures. The skill makes curation a step in the workflow so no one else owns it.
+This is the step that fails silently in every team that "intends to keep a SQL library." When curation is nobody's explicit step, it becomes everyone's job and so nobody's. The skill makes curation a step in the workflow so no one else owns it.
 
 ## When to run
 
@@ -43,7 +53,7 @@ This is the step that fails silently in every team that "intends to keep a SQL l
 - **Run curate BEFORE the final user-facing summary.** The agent's last action in the session is the user-facing report; curate is the second-to-last. Make it part of the wrap-up routine.
 - **Prefer YES over NO when uncertain.** Disk is cheap; curation is the only way the library grows. A marginal save is worse than a marginal miss (the next person can delete a query; they can't conjure one that was thrown away).
 - **Combine variations aggressively.** 5 ad-hoc queries from one investigation often reduce to 1 reusable + 4 incident-specific. The 1 is what gets saved.
-- **Tie each saved query to the incident in the "Recent additions" note** at the bottom of INDEX.md. "2026-05-28 — Q17 added after support-001 (Camilo Fortaleche) — email whitespace tenant-wide audit." Six months later, the context is recoverable.
+- **Tie each saved query to the incident in the "Recent additions" note** at the bottom of INDEX.md. "2026-05-28 — Q17 added after support-001 (Jane Doe) — email whitespace tenant-wide audit." Six months later, the context is recoverable.
 
 ## Anti-patterns
 
@@ -76,7 +86,7 @@ skill: Reading .claude/agentic-sql.session.log...
        3. Collision groups under canonical email
           → REUSABLE. Will promote as Q19.
 
-       4. "PCUs created today between 14:00-18:00 UTC for project XYZ"
+       4. "PCUs created on 2026-05-14 between 14:00-18:00 UTC for project XYZ"
           → INCIDENT-SPECIFIC (date + project hardcoded). Drop.
 
        Run /agentic-sql add for each REUSABLE pattern? [Y/n]
@@ -98,9 +108,3 @@ skill: [walks through add for Q17, Q18, Q19]
 The pattern this skill enforces — write-and-execute → review → promote → index — is the same shape Wikipedia editors use, software engineers use for tests, scientists use for lab notebooks. The discipline is universal; what changes is how strictly it's enforced. Without a forced step at the end of every investigation, the discipline collapses into "I'll add things when I have time," and time never comes.
 
 `/agentic-sql curate` is the forced step. It's the most boring command in the skill and the most important.
-
-## Related
-
-- [reference/add.md](add.md) — the actual save mechanism that curate invokes
-- [reference/audit.md](audit.md) — a higher-level library health check (weekly / before refactor)
-- [reference/run.md](run.md) — writes the session log that curate reads

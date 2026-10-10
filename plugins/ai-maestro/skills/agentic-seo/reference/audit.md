@@ -1,5 +1,13 @@
 Run a systematic SEO audit on a target page and generate a comprehensive pass/fail report. Don't fix issues; document them for the `implement` or `structured-data` sub-commands to address.
 
+## Contents
+
+- Inputs
+- Audit Steps (1 to 7)
+- Judgement calls
+- Generate Report
+
+
 **Important**: Use the site configuration gathered during first-time setup (`{SITE_NAME}`, `{DOMAIN}`, `{TWITTER_HANDLE}`, etc.). If not yet gathered, ask the user first per SKILL.md instructions.
 
 ## Inputs
@@ -26,7 +34,7 @@ Verify each tag exists and meets quality standards:
 |---|-------|-------------|---------------|
 | 1 | Title tag | Title is set programmatically | 50-60 chars, includes primary keyword, ends with `\| {SITE_NAME}` |
 | 2 | Meta description | `name: 'description'` | 150-160 chars, includes CTA, unique to page |
-| 3 | Meta keywords | `name: 'keywords'` | Relevant terms, not stuffed (5-15 keywords) |
+| 3 | Meta keywords | `name: 'keywords'` | Advisory only: Google ignores it; not required |
 | 4 | Meta robots | `name: 'robots'` | `index, follow` at minimum |
 | 5 | Meta author | `name: 'author'` | `{SITE_NAME}` |
 | 6 | Canonical URL | Canonical link set | Full URL `{DOMAIN}/...`, matches page route |
@@ -47,9 +55,9 @@ All 8+ required:
 | 14 | OG image:height | `og:image:height` | `630` |
 | 15 | OG locale | `og:locale` | `en_US` (or appropriate locale) |
 
-### Step 4 -- Check Twitter Card Tags
+### Step 4 -- Check X/Twitter Card Tags
 
-All 6+ required:
+All 6+ required (X/Twitter cards):
 
 | # | Check | Tag | Pass Criteria |
 |---|-------|-----|---------------|
@@ -65,16 +73,16 @@ All 6+ required:
 | # | Check | Requirement | Pass Criteria |
 |---|-------|-------------|---------------|
 | 22 | JSON-LD present | Structured data method exists | Creates `<script type="application/ld+json">` |
-| 23 | Schema count | At least 2 schemas | Array or multiple scripts with distinct `@type` values |
+| 23 | Schema fit | Each schema matches visible content | No schema without matching on-page content; no minimum count |
 | 24 | SSR-safe | NOT wrapped in browser-only guard | Called directly in init lifecycle without browser check |
 | 25 | Cleanup | Removed on destroy | Removes script element from DOM on component destroy |
-| 26 | Schema types | Appropriate types used | At minimum: one content schema + BreadcrumbList |
+| 26 | Schema types | Appropriate types used | Types fit the page (e.g., Article, BreadcrumbList, Organization); no FAQPage or HowTo needed |
 
 ### Step 6 -- Check Infrastructure
 
 | # | Check | Requirement | Pass Criteria |
 |---|-------|-------------|---------------|
-| 27 | Sitemap entry | Entry in sitemap.xml | `<url>` with correct `<loc>`, appropriate `<priority>` |
+| 27 | Sitemap entry | Entry in sitemap.xml | `<url>` with correct `<loc>`; `<lastmod>` only if accurate |
 | 28 | Prerender config | Listed for prerendering | Route path configured for static generation |
 | 29 | Social image | Image file exists | Image file referenced by OG/Twitter tags exists in the project |
 
@@ -91,9 +99,10 @@ Read the component's template file and verify:
 
 ## Judgement calls
 
-- **Check 3 (`keywords`)** is advisory. Google ignores the tag. Report it; do not let it lower the score of a page that is otherwise right.
+- **Check 3 (`keywords`)** is advisory. Google ignores the tag. Report it; do not let it lower the score of a page that is otherwise right, and do not recommend adding it.
 - **Checks 17 and 18 (`twitter:site`, `twitter:creator`)** apply only when the site has a handle. If `{TWITTER_HANDLE}` is empty, mark them N/A, not FAIL.
-- **Check 23 (schema count)** is advisory. Never add a schema to reach two.
+- **Check 23 (schema fit)**: add only structured data that matches the visible content; never add a schema just to reach a count.
+- **Check 22 and 26**: also run Google's Rich Results Test and the Schema Markup Validator on the built page and list their errors.
 - **Check 32 (image alt)**: a missing `alt` fails. `alt=""` is valid for decoration (and is the right markup for it); list those for a human to confirm rather than failing them.
 - To audit many pages at once, or to compare a build against the live site, use `audit-build`.
 

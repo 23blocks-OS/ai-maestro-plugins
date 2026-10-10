@@ -1,93 +1,121 @@
 # `/agentic-sql run <query-id-or-path>`
 
-Execute a saved query (by ID like `Q17`) or a freshly-written one, with the three-layer safety gate.
+Execute a saved query (by ID like `Q17`) or a freshly-written one through the SQL gate.
+
+## Contents
+
+- Purpose
+- When to run
+- The SQL gate (layers 1-3)
+- What the wrapper must do
+- Procedure
+- Patterns to follow
+- Anti-patterns
+- Example flow
 
 ## Purpose
 
-Make every SQL execution against a production / staging database go through three independent safety layers. Each layer alone has been broken in production (CVE-2025-67644 is a recent text-to-SQL example); together they make the most common accidents impossible.
+Every SQL execution against a production or staging database goes through the SQL gate: a read-only role, a parser that allows one plain SELECT, and a row limit plus timeouts. Each layer alone has been bypassed. Read-only transactions alone have been bypassed: Anthropic's archived reference Postgres MCP server accepted multiple statements, so `COMMIT; <write>` in one string ended the read-only transaction (Datadog Security Labs, 2025-08-21, https://securitylabs.datadoghq.com/articles/mcp-vulnerability-case-study-SQL-injection-in-the-postgresql-mcp-server/). Together the layers make the common accidents impossible.
 
 ## When to run
 
 - Every time you would otherwise reach for `psql -c "..."`.
-- After `/agentic-sql find` returns an exact-match query and you've supplied the parameters.
-- During investigation when you've written a new query and want to validate the AST before executing.
+- After `/agentic-sql find` returns an exact-match query and you have supplied the parameters.
+- During investigation, in dry-run mode (parse and gate only, no execution), to validate a new query.
 
-## The three layers
+## The SQL gate
 
-### Layer 1 — Postgres read-only role
+### Layer 1: the read-only role
 
-A dedicated role (e.g. `{READ_ONLY_ROLE}`) with these grants and nothing else:
+The guard is a role with no write grants. Create it once per database:
 
 ```sql
+CREATE ROLE {READ_ONLY_ROLE} LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB
+  CONNECTION LIMIT 5;
+GRANT CONNECT ON DATABASE "<database>" TO {READ_ONLY_ROLE};
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA "<schema>" TO {READ_ONLY_ROLE};
 GRANT SELECT ON ALL TABLES IN SCHEMA "<schema>" TO {READ_ONLY_ROLE};
-ALTER ROLE {READ_ONLY_ROLE} SET default_transaction_read_only = on;
-ALTER ROLE {READ_ONLY_ROLE} SET statement_timeout = '30s';
+ALTER DEFAULT PRIVILEGES IN SCHEMA "<schema>" GRANT SELECT ON TABLES TO {READ_ONLY_ROLE};
+
+ALTER ROLE {READ_ONLY_ROLE} SET statement_timeout = '{STATEMENT_TIMEOUT}';
+ALTER ROLE {READ_ONLY_ROLE} SET lock_timeout = '5s';
+ALTER ROLE {READ_ONLY_ROLE} SET idle_in_transaction_session_timeout = '30s';
 ```
 
-Even if every other layer fails, the DB refuses any write. `default_transaction_read_only` is the belt-and-suspenders catch: any accidental UPDATE/DELETE comes back with `ERROR: cannot execute UPDATE in a read-only transaction`.
+- `ALTER DEFAULT PRIVILEGES` runs as the role that creates the tables (add `FOR ROLE <owner>` if that is not you), so new tables are covered.
+- Do not rely on `default_transaction_read_only` or `SET TRANSACTION READ ONLY`: a session can change them. The guard is a role with no write grants (https://www.postgresql.org/docs/current/sql-set-transaction.html).
+- Shortcut on PostgreSQL 14+: `GRANT pg_read_all_data TO {READ_ONLY_ROLE};` replaces the per-schema grants. Caveat: it bypasses row-level security on every table (https://www.postgresql.org/docs/current/predefined-roles.html), so skip it when RLS separates tenants.
+- Never grant `pg_read_server_files`, `pg_write_server_files` or `pg_execute_server_program`.
 
-### Layer 2 — SQLGlot AST gate
+### Layer 2: the parser (allow-list)
 
-Before psql ever sees the query, parse it with SQLGlot's PostgreSQL dialect, walk the AST, and:
+Before psql sees the query, parse it with SQLGlot using the `postgres` dialect and apply an allow-list:
 
-1. **Reject any non-SELECT root node.** No `Update`, `Delete`, `Insert`, `Drop`, `Truncate`, `Alter`, `Create`, `Grant`, `Revoke`, `Vacuum`, `Reindex`, or `Copy` (with TO). Return a clear error: "Skill is read-only; refusing to execute <root_node_type>."
-2. **Reject `pg_*` admin function calls** that could exfiltrate or modify state (`pg_terminate_backend`, `pg_cancel_backend`, `pg_read_binary_file`, etc.). Whitelist the introspection functions you actually need (`current_database`, `current_schema`, `version`, etc.).
-3. **Validate column references** against `{SCHEMA_DOC_PATH}` if possible. Hallucinated columns get rejected before they hit the DB. (This is a best-effort layer — the schema doc may not be exhaustive — but it catches the obvious cases.)
+1. **Exactly one statement per call.** Reject any input that parses to more than one statement, or that contains a trailing or embedded semicolon-separated statement.
+2. **The root must be SELECT** (a `WITH ... SELECT` counts; its root is still the SELECT).
+3. **Walk the whole tree** and reject, anywhere in it: INSERT, UPDATE, DELETE, MERGE; CREATE, ALTER, DROP, TRUNCATE, GRANT, REVOKE; SELECT INTO; locking clauses (`FOR UPDATE`, `FOR SHARE`); COPY; SET, RESET, DO, CALL; transaction control (BEGIN, COMMIT, ROLLBACK); and `EXPLAIN ANALYZE` of anything but a SELECT.
+4. **Reject every function call that is not on the function allow-list** kept in the project. Compare names after removing quotes and ignoring schema qualification, so `"pg_catalog"."Pg_Read_File"(...)` and `pg_read_file(...)` are the same name.
 
-If any check fails, return the error to the agent for self-healing (rewrite the query, then re-submit). Bird-Interact (arxiv 2510.05318) formalizes this as a "dynamic interaction loop" — feed the error back, let the agent fix, re-validate.
+Why an allow-list and not a deny-list of functions: Postgres has too many functions that read files, kill sessions or change state, and new ones ship with each release. Examples of what the allow-list keeps out: `pg_terminate_backend`, `pg_cancel_backend`, `pg_read_file`, `pg_read_binary_file`, `dblink*`, `lo_import`, `lo_export`, `set_config`, `nextval`, `setval`, `query_to_xml`.
 
-### Layer 3 — LIMIT injection + statement timeout
+**Quality check (not a safety layer):** validate column references against `{SCHEMA_DOC_PATH}` where possible. Hallucinated columns get rejected before they hit the DB. The schema doc may not be exhaustive, so this only catches the obvious cases.
 
-Wrap every executed query in:
+On any rejection, return the reason to the agent so it can rewrite the query and re-submit.
 
-```sql
-SET statement_timeout = '30s';
-<the query>
-LIMIT {MAX_ROWS};  -- only if the query has no LIMIT clause
-```
+### Layer 3: LIMIT, timeouts, one statement per round trip
 
-The LIMIT injection prevents an accidental `SELECT * FROM huge_table` from returning gigabytes. Don't inject if the query already has one — the author may have meant the larger result.
+- Send ONE statement per round trip. Never prefix the query with a `SET`.
+- Timeouts live on the role (layer 1), so they apply to every connection without extra statements.
+- Open a fresh connection per query, so no session state survives between queries.
+- Inject `LIMIT {MAX_ROWS}` on the outermost SELECT when it has none. Do not inject when the author wrote one; they may have meant the larger result.
 
-Statement timeout makes runaway queries die instead of hanging the connection or saturating the DB.
+## What the wrapper must do
+
+The skill does not provide a wrapper; the project must have one at `{SAFE_PSQL_WRAPPER}` (see the prerequisite in SKILL.md). It must:
+
+- Parse and gate the SQL as in layer 2, and support a dry-run mode that stops after the gate.
+- Inject the LIMIT as in layer 3.
+- Connect as `{READ_ONLY_ROLE}`, with a connection string taken from an environment variable, one fresh connection per query.
+- Send the gated statement alone, and print the final SQL and a structured rejection reason when it refuses.
+- Live in the repository as code, so it can be unit-tested and called from CI or by a human. The skill stays focused on the workflow.
 
 ## Procedure
 
 ```
 input: query (saved by ID or inline SQL) + parameters dict
-output: rows + schema, OR safety-gate rejection with reason
+output: rows + column headers, OR a gate rejection with reason
 
-1. resolve(query) → SQL string
+1. resolve(query) -> SQL string
    - if id: read from {QUERY_DIR}/<file>.sql, substitute :placeholders with parameters
    - if inline: use as-is
 2. parse(SQL) with SQLGlot postgres dialect
    - on parse error: return error to agent for fix
-3. ast_gate(parsed)
-   - root node must be SELECT or WITH (CTE)
-   - no banned function calls
+3. gate(parsed): one statement, root SELECT, whole-tree check, function allow-list
    - on rejection: return reason, agent can rewrite
-4. inject_limit(parsed) → SQL'
+4. inject_limit(parsed) -> SQL'
    - if no LIMIT in outermost SELECT, append LIMIT {MAX_ROWS}
-5. connect as {READ_ONLY_ROLE}
-6. execute "SET statement_timeout = '30s'; <SQL'>"
+5. open a fresh connection as {READ_ONLY_ROLE}
+6. execute SQL' as the only statement of the round trip
 7. return rows + column headers
 ```
 
 ## Patterns to follow
 
-- **Show the agent the parametrized SQL before execution.** Don't hide the substitution; let the user verify "yes, look up uid `ae5bda69-...`."
-- **Show the agent the AST-gated SQL before execution.** If the gate appended a LIMIT, show it. Transparency builds trust.
-- **On rejection, return a STRUCTURED error.** "AST gate rejected: root node is Update, but skill is read-only." Not "error 500." The agent must be able to act on the message.
-- **Cap result display at ~50 rows.** Even with the LIMIT injection, dumping 1000 rows into the agent's context is wasteful. Return the count, the first 50, and let the user ask for more.
-- **Log every executed query** to a session log (e.g. `.claude/agentic-sql.session.log`) so `/agentic-sql curate` can list them at the end. Include: query ID or "ad-hoc", parametrized SQL, row count, duration.
+- **Show the agent the parametrized SQL before execution.** Do not hide the substitution; let the user verify "yes, look up uid `00000000-0000-0000-0000-000000000000`."
+- **Show the gated SQL before execution.** If the gate appended a LIMIT, show it.
+- **On rejection, return a structured error.** "SQL gate rejected: root node is Update, but the skill is read-only." Not "error 500."
+- **Cap result display at {DISPLAY_ROWS} rows.** Even with the LIMIT injection, dumping {MAX_ROWS} rows into the agent's context is wasteful. Return the count, the first {DISPLAY_ROWS}, and let the user ask for more.
+- **Log every executed query** to a session log (e.g. `.claude/agentic-sql.session.log`) so `/agentic-sql curate` can list them. Log only query ID or "ad-hoc", parameter names (not values), row count and duration. Never log result rows.
 
 ## Anti-patterns
 
-- **Connecting as the Rails app role / production superuser.** Every layer downstream assumes read-only; if the role can write, you've defeated the model.
-- **Skipping the AST gate "because the query is obviously a SELECT."** "Obviously" has been wrong in production. Always parse.
-- **Pasting raw user input into the SQL.** Parameters go through the placeholder substitution, which is itself validated. Never `f"SELECT ... WHERE x = {user_input}"`.
-- **Returning the full result set to the agent.** Hundreds of rows is a context-budget bomb. Cap display.
-- **Suppressing AST errors.** If the gate rejects, surface it. Don't silently fall through to raw execution.
+- **Connecting as the application role or a superuser.** Every layer assumes read-only; if the role can write, the model is defeated.
+- **Skipping the gate "because the query is obviously a SELECT."** "Obviously" has been wrong in production. Always parse.
+- **Pasting raw user input into the SQL.** Parameters go through the placeholder substitution. Never `f"SELECT ... WHERE x = {user_input}"`.
+- **Returning the full result set to the agent.** Cap display.
+- **Suppressing gate errors.** If the gate rejects, surface it. Never fall through to raw execution.
+- **Prefixing the query with `SET ...;` in one string.** That is the multi-statement shape the gate exists to reject. Set timeouts on the role.
 
 ## Example flow
 
@@ -98,14 +126,13 @@ skill: Q13 — Email whitespace pollution audit (tenant-wide)
        Reading sql_library/queries/email-whitespace-pollution-audit.sql
        No parameters required. Optional :sample_limit for drilldown.
 
+       Environment: acme_prod (production). No read replica configured.
        Parsing SQL via SQLGlot (postgres dialect)...
-       AST root: SELECT — gate passed.
+       One statement, root SELECT, no banned nodes, functions on the allow-list: gate passed.
        LIMIT injection: query has GROUP BY, no LIMIT — appending LIMIT 1000.
-       Connecting as agentic_sql_ro to zoom_prod.
+       Connecting as agentic_sql_ro to acme_prod (fresh connection).
 
-       Executing:
-         SET statement_timeout = '30s';
-         SET search_path TO "fff363a5";
+       Executing (single statement):
          SELECT 'user_identities' AS tbl, ... LIMIT 1000;
 
        Returned 2 rows in 0.18s.
@@ -115,21 +142,5 @@ skill: Q13 — Email whitespace pollution audit (tenant-wide)
        user_identities  |  38,100    |     0           |    0     |   0     |     0
        user_profiles    |  38,073    |     0           |    0     |   0     |     0
 
-       (Logged to .claude/agentic-sql.session.log)
+       (Logged to .claude/agentic-sql.session.log: Q13, no params, 2 rows, 0.18s)
 ```
-
-## On the wrapper script
-
-In a project that adopts this skill, the actual implementation of the three layers belongs in a small wrapper script (e.g. `bin/safe_psql.sh` or a Ruby / Python equivalent) checked into the repo. The skill calls the wrapper; the wrapper does the parse + gate + inject + execute. Keeping the implementation in code (not in the skill's markdown) means:
-
-- The wrapper can be unit-tested.
-- The wrapper can be invoked outside the skill (from CI, from a one-off script, from a human in psql).
-- The skill stays focused on the WORKFLOW, not the mechanics.
-
-A reference wrapper is in the works as a sibling repo (`agentic-sql-wrapper`) — this skill assumes the wrapper exists and is on the path; it doesn't reimplement it.
-
-## Related
-
-- [reference/find.md](find.md) — the step that hands `run` a query ID
-- [reference/add.md](add.md) — save a successful run as a reusable library entry
-- [reference/curate.md](curate.md) — uses the session log this command writes

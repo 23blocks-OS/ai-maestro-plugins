@@ -1,6 +1,16 @@
 # runbook-create — Create a reusable runbook
 
-Creates a runbook from a resolved case that represents a recurring pattern. Runbooks capture institutional knowledge so future incidents can be resolved faster.
+## Contents
+
+- Usage
+- What it does
+- When to create a runbook
+- Runbook template
+- After creating
+- Updating runbooks
+- Notes
+
+Creates a runbook from a resolved case that represents a recurring pattern. Runbooks capture institutional knowledge so future cases can be resolved faster.
 
 ## Usage
 
@@ -20,10 +30,10 @@ Creates a runbook from a resolved case that represents a recurring pattern. Runb
 ## Example
 
 ```bash
-/agentic-support runbook-create S005 "Missing scopes cause 204 responses"
+/agentic-support runbook-create S005 "Missing scope causes checkout 500"
 ```
 
-Creates: `support/runbooks/R001-missing-scopes-204.md`
+Creates: `support/runbooks/R001-missing-scope-checkout-500.md`
 
 ## When to create a runbook
 
@@ -49,7 +59,9 @@ Generated runbook structure:
 
 **Category:** (extracted from case)  
 **Frequency:** Common / Occasional / Rare  
-**Last Updated:** YYYY-MM-DD
+**Owner:** (person or team who maintains it)  
+**Escalation:** (who to call, when the steps do not work)  
+**Last reviewed:** YYYY-MM-DD
 
 ## When to Use
 
@@ -80,6 +92,10 @@ Symptoms that indicate this runbook applies:
 
 (extracted from case Verification section)
 
+## Rollback
+
+How to undo the steps if they make things worse.
+
 ## Prevention
 
 How to prevent this in the future:
@@ -87,7 +103,7 @@ How to prevent this in the future:
 
 ## Related Cases
 
-- S### - Original case
+- S### - Original case (case ids only, no customer names)
 
 ## See Also
 
@@ -97,7 +113,7 @@ How to prevent this in the future:
 
 ## After creating
 
-1. **Edit for clarity** — Remove case-specific details, generalize
+1. **Edit for clarity** — Remove case-specific details, generalize. Anonymize customer names, ids and contacts; never name other customers in a runbook
 2. **Add prevention** — How to avoid this issue
 3. **Test the steps** — Ensure runbook can be followed without the case
 4. **Link from case** — Update original case with runbook reference
@@ -115,5 +131,6 @@ When the same pattern occurs again:
 
 - Runbooks are living documents — update them as you learn
 - Each runbook should be self-contained (no "see case S###" for critical steps)
-- Include both the fix AND how to verify it worked
+- Include the fix, how to verify it, and how to roll it back
+- A runbook that was wrong or incomplete when used gets fixed the same day
 - Prevention section prevents runbook proliferation

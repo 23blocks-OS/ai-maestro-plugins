@@ -1,5 +1,15 @@
 # audit — Health-check the support system
 
+## Contents
+
+- Usage
+- What it does
+- Example output
+- Audit checks
+- Scheduling
+- Auto-fix mode
+- Notes
+
 Audits the support system for common issues: orphan files, missing customer info, stale inbound cases, broken links, and runbook coverage.
 
 ## Usage
@@ -21,7 +31,7 @@ Audits the support system for common issues: orphan files, missing customer info
 
 ```markdown
 # Support System Audit
-**Date:** 2026-10-10
+**Date:** 2026-01-15
 
 ## Health Score: 85/100
 
@@ -44,20 +54,20 @@ Audits the support system for common issues: orphan files, missing customer info
 ### Stale Inbound Cases
 Cases in inbound/ older than 7 days:
 
-- **S004** - Verilog identity registration (14 days old)
+- **S004** - Globex Retail identity registration (14 days old)
   → Action: Resolve or escalate
 
 ### Missing Customer Info
 Customers missing fields in _customer-info.md:
 
-- **verilog/_customer-info.md**
+- **globex-retail/_customer-info.md**
   → Missing: Technical Contact, Company ID, Schema
 
 ### Orphan Files
 Case files not listed in INDEX.md:
 
 - **inbound/debug-session-notes.md**
-  → Action: Remove or create case for it
+  → Action: Create a case for it, or approve its removal
 
 ### Broken Links
 Missing runbook references:
@@ -81,11 +91,11 @@ Runbooks by category:
 ## Recommended Actions
 
 1. **High Priority**
-   - Resolve S004 (Verilog) - 14 days in inbound
-   - Remove orphan file: debug-session-notes.md
+   - Resolve S004 (Globex Retail) - 14 days in inbound
+   - Review orphan file: debug-session-notes.md (attach to a case or approve removal)
 
 2. **Medium Priority**
-   - Fill customer info for Verilog
+   - Fill customer info for Globex Retail
    - Create runbook for database connection issues (seen 3 times)
 
 3. **Low Priority**
@@ -94,10 +104,10 @@ Runbooks by category:
 
 ## Auto-Fix Available
 
-Run `/agentic-support audit --fix` to automatically:
-- Remove orphan files
+Run `/agentic-support audit --fix` to apply, after you approve the listed actions:
 - Update INDEX.md with missing entries
 - Create customer info templates
+- List orphan files and what removing them would delete (nothing is removed without approval)
 ```
 
 ## Audit checks
@@ -146,11 +156,13 @@ Run audit:
 /agentic-support audit --fix
 ```
 
-Auto-fixes:
+`--fix` shows the exact actions first (files to create, INDEX lines to add, orphan files listed by path with what removing them would delete) and waits for approval. It removes nothing until you approve each removal.
+
+Proposes, after approval:
 - Creates missing INDEX entries
-- Removes orphan files
 - Creates customer info templates
 - Fixes broken case numbers
+- Orphan files: lists the exact paths; removes them only on explicit approval
 
 Does NOT auto-fix (requires review):
 - Stale inbound cases (need resolution)
@@ -159,7 +171,7 @@ Does NOT auto-fix (requires review):
 
 ## Notes
 
-- Audit is read-only by default
+- Audit is read-only by default; only `--fix`, and only after approval, changes files
 - Health score helps track improvement over time
 - Warnings are suggestions, not requirements
 - Use audit before quarterly reviews or migrations

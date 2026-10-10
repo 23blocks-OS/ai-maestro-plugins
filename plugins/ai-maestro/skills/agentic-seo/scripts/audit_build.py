@@ -18,6 +18,10 @@ Hard checks FAIL a page. Advisory checks never do; they are counted and listed a
 import argparse, csv, json, os, re, sys, tempfile, collections
 from html.parser import HTMLParser
 
+# Conventional lengths so titles and descriptions are not cut off in results; advisory, not a Google rule.
+TITLE_RANGE = (50, 60)
+DESCRIPTION_RANGE = (150, 160)
+
 CLAIMS = re.compile(r'aggregateRating|ratingValue|"review"|"Review"|priceRange|"price"|"offers"|availability|openingHours', re.I)
 
 
@@ -61,7 +65,11 @@ def load(root):
             if f.endswith('.html'):
                 rel = os.path.relpath(os.path.join(dp, f), root).replace(os.sep, '/')
                 route = '/' + rel[:-len('index.html')] if rel.endswith('index.html') else '/' + rel
-                p = Page(); p.feed(open(os.path.join(dp, f), encoding='utf-8', errors='replace').read())
+                try:
+                    with open(os.path.join(dp, f), encoding='utf-8', errors='replace') as fh: text = fh.read()
+                except OSError as e:
+                    sys.exit('cannot read %s: %s' % (os.path.join(dp, f), e.strerror or e))
+                p = Page(); p.feed(text)
                 pages[route] = p
     return pages
 
@@ -72,13 +80,21 @@ def indexable(p): return 'noindex' not in robots(p)
 
 def sitemap_urls(root):
     f = os.path.join(root, 'sitemap.xml')
-    return set(re.findall(r'<loc>\s*([^<\s]+)\s*</loc>', open(f, encoding='utf-8').read())) if os.path.exists(f) else None
+    if not os.path.exists(f): return None
+    try:
+        with open(f, encoding='utf-8') as fh: return set(re.findall(r'<loc>\s*([^<\s]+)\s*</loc>', fh.read()))
+    except OSError as e:
+        sys.exit('cannot read %s: %s' % (f, e.strerror or e))
 
 
 def redirects(root):
     f = os.path.join(root, '_redirects'); out = []
     if os.path.exists(f):
-        for l in open(f, encoding='utf-8'):
+        try:
+            with open(f, encoding='utf-8') as fh: lines = fh.readlines()
+        except OSError as e:
+            sys.exit('cannot read %s: %s' % (f, e.strerror or e))
+        for l in lines:
             t = l.split()
             if len(t) >= 2 and not l.lstrip().startswith('#'): out.append((t[0], t[1]))
     return out
@@ -94,13 +110,12 @@ def page_checks(route, p, root, pages, domain, handle, strict, redir_src):
     hard, adv = [], []
     t = p.title.strip(); d = p.meta.get('description', '')
     if not t: hard.append('no title')
-    elif not 50 <= len(t) <= 60: adv.append('title %d chars' % len(t))
+    elif not TITLE_RANGE[0] <= len(t) <= TITLE_RANGE[1]: adv.append('title %d chars' % len(t))
     if not d: hard.append('no description')
-    elif not 150 <= len(d) <= 160: adv.append('description %d chars' % len(d))
+    elif not DESCRIPTION_RANGE[0] <= len(d) <= DESCRIPTION_RANGE[1]: adv.append('description %d chars' % len(d))
     want = domain + route
     if p.canonical != want: hard.append('canonical %r, want %r' % (p.canonical, want))
     if not p.meta.get('robots'): adv.append('no meta robots')
-    if not p.meta.get('keywords'): adv.append('no meta keywords')      # Google ignores it
     if not p.meta.get('author'): adv.append('no meta author')
     for k in ('og:type', 'og:site_name', 'og:title', 'og:description', 'og:url', 'og:image',
               'og:image:width', 'og:image:height', 'og:locale', 'twitter:card', 'twitter:title',
@@ -121,9 +136,8 @@ def page_checks(route, p, root, pages, domain, handle, strict, redir_src):
             for n in (j.get('@graph', [j]) if isinstance(j, dict) else j):
                 ty = n.get('@type') if isinstance(n, dict) else None
                 types.update(ty if isinstance(ty, list) else [ty])
-        except Exception: hard.append('JSON-LD does not parse')
+        except (ValueError, AttributeError, TypeError): hard.append('JSON-LD does not parse')
         if strict and CLAIMS.search(b): hard.append('JSON-LD carries a price/rating/review/availability term')
-    if p.ld and len(types - {None}) < 2: adv.append('fewer than 2 schema types')   # advisory, never a target
     h1 = [t for lv, t in p.headings if lv == 1]
     if len(h1) != 1: hard.append('%d H1' % len(h1))
     last = 0

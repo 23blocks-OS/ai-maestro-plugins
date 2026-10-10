@@ -21,7 +21,7 @@ Run it with `python3 scripts/audit_build.py` (Python 3 standard library only). I
 
 **Per page, hard (fails the page):** title and description present · canonical equals `{DOMAIN}` + route · all nine Open Graph tags and the four required Twitter tags · `og:url` matches the canonical · the `og:image` file exists in the build · JSON-LD present and parses · exactly one `h1` · no skipped heading level · every `img` has an `alt` attribute · at least one internal link · no broken internal link (a redirect source counts as served) · an indexable page is in the sitemap · a `noindex` page is not.
 
-**Per page, advisory (counted and listed, never a fail):** title length outside 50–60 · description length outside 150–160 · `keywords` (Google ignores it) · `author` · `twitter:site` and `twitter:creator` (only when you pass `--twitter-handle`) · fewer than two schema types (a quota is never a target) · an `img` with `alt=""` (valid for decoration; confirm by eye).
+**Per page, advisory (counted and listed, never a fail):** title length outside 50–60 · description length outside 150–160 · `author` · `twitter:site` and `twitter:creator` (only when you pass `--twitter-handle`) · an `img` with `alt=""` (valid for decoration; confirm by eye).
 
 **Site-wide:** sitemap lists a URL with no built page · a `_redirects` source is still built (the static page wins over the rule, so the redirect never fires; the spec must say which pages stop being built) · a redirect target is not built · duplicate titles.
 

@@ -2,13 +2,26 @@
 
 View or update the schema reference doc.
 
+## Contents
+
+- Purpose
+- When to run
+- What the schema doc captures
+- Procedure (read mode)
+- Procedure (write mode: add new table)
+- Procedure (write mode: update gotcha)
+- Patterns to follow
+- Anti-patterns
+- Example flow (read)
+- Example flow (add)
+
 ## Purpose
 
 `{SCHEMA_DOC_PATH}` is the source of truth for which tables exist, what columns they have, how to join across databases, and what gotchas you'd never derive from a `\d table` in psql. Every saved library query links to it via the `Schema reference:` header line.
 
 This command is the read AND write interface for that doc:
 
-- **Read mode** (default): surface the section(s) relevant to a topic. The schema-as-RAG pattern from AutoLink (arxiv 2511.17190) and LinkAlign (arxiv 2503.18596) — retrieve only what the agent needs, never paste the whole catalog.
+- **Read mode** (default): surface the section(s) relevant to a topic. Retrieve only what the agent needs, never paste the whole catalog.
 - **Write mode** (`--add` or `--update`): add a new table section or update an existing one when an investigation surfaces something new.
 
 ## When to run
@@ -81,7 +94,7 @@ input: table.column, gotcha text
 
 1. locate the section in {SCHEMA_DOC_PATH}
 2. append the gotcha as a bullet under the column or in the section's "Gotchas" subsection
-3. surface examples if the agent has them (a recent incident, an INDEX.md query that hit this trap)
+3. surface examples if the agent has them (a past incident, an INDEX.md query that hit this trap)
 4. write the file, show the diff
 ```
 
@@ -104,7 +117,7 @@ input: table.column, gotcha text
 ```
 agent: /agentic-sql schema project_character_users
 
-skill: ## zoom — project_character_users (PCUs)
+skill: ## acme — project_character_users (PCUs)
        The junction table between projects/characters and talents.
 
        - unique_id (uuid) — canonical PCU ID. Also reused as the context.unique_id
@@ -139,7 +152,7 @@ skill: ## zoom — project_character_users (PCUs)
 ```
 agent: /agentic-sql schema --add company_features
 
-skill: Connecting to zoom as agentic_sql_ro to introspect...
+skill: Connecting to acme as agentic_sql_ro to introspect...
 
        Columns from information_schema:
          id, unique_id, company_unique_id, feature_name, enabled, created_at,
@@ -155,15 +168,9 @@ skill: Connecting to zoom as agentic_sql_ro to introspect...
          - enabled (varchar 'true'/'false' — NOT boolean)
          - payload (jsonb) — feature-specific config
 
-       Any gotchas to record? (recent incidents, known traps)
+       Any gotchas to record? (past incidents, known traps)
 user:   `enabled` is varchar 'true'/'false', not boolean — same as elsewhere in
         this schema. Don't use `WHERE enabled = TRUE`.
 
 skill: [writes section to {SCHEMA_DOC_PATH}, shows diff]
 ```
-
-## Related
-
-- [reference/find.md](find.md) — uses schema sections to disambiguate near-miss queries
-- [reference/add.md](add.md) — requires a schema section to exist before saving a query
-- [reference/run.md](run.md) — the AST gate uses the schema doc (best-effort) to catch hallucinated columns

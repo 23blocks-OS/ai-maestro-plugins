@@ -1,4 +1,13 @@
-Quick 15-item verification checklist to run against prerendered HTML. Use after implementing SEO or before deploying changes.
+Quick 15-item verification checklist to run against the prerendered HTML of one page. Use after implementing SEO or before deploying changes.
+
+## Contents
+
+- Prerequisites
+- The 15-Point Checklist (meta tags, social tags, structured data, infrastructure)
+- Sitemap fields
+- Quick Bulk Check
+- Interpreting Results
+- After Fixing Issues
 
 **Important**: Use the site configuration gathered during first-time setup (`{SITE_NAME}`, `{DOMAIN}`, `{BUILD_OUTPUT}`, `{SITEMAP_PATH}`, etc.). If not yet gathered, ask the user first per SKILL.md instructions.
 
@@ -39,11 +48,11 @@ grep 'name="robots"' {BUILD_OUTPUT}/ROUTE_PATH/index.html
 ```
 Expected: `content="index, follow"`
 
-**5. Keywords**
+**5. OG URL**
 ```bash
-grep 'name="keywords"' {BUILD_OUTPUT}/ROUTE_PATH/index.html
+grep 'og:url' {BUILD_OUTPUT}/ROUTE_PATH/index.html
 ```
-Expected: 5-15 relevant keywords
+Expected: Same URL as the canonical
 
 ### Social Tags (4 checks)
 
@@ -59,13 +68,13 @@ grep 'og:image' {BUILD_OUTPUT}/ROUTE_PATH/index.html
 ```
 Expected: Full URL to social sharing image
 
-**8. Twitter card**
+**8. X/Twitter card**
 ```bash
 grep 'twitter:card' {BUILD_OUTPUT}/ROUTE_PATH/index.html
 ```
 Expected: `content="summary_large_image"`
 
-**9. Twitter image**
+**9. X/Twitter image**
 ```bash
 grep 'twitter:image' {BUILD_OUTPUT}/ROUTE_PATH/index.html
 ```
@@ -83,9 +92,9 @@ Expected: At least one `<script type="application/ld+json">` tag in the HTML
 ```bash
 grep -o '"@type":"[^"]*"' {BUILD_OUTPUT}/ROUTE_PATH/index.html
 ```
-Expected: At least 2 types (e.g., SoftwareApplication, BreadcrumbList)
+Expected: Types that match the visible content (e.g., SoftwareApplication, Article). No minimum count; never add a schema to reach one
 
-**12. BreadcrumbList present**
+**12. BreadcrumbList present (where the page has a hierarchy)**
 ```bash
 grep 'BreadcrumbList' {BUILD_OUTPUT}/ROUTE_PATH/index.html
 ```
@@ -97,7 +106,7 @@ Expected: BreadcrumbList schema with correct page hierarchy
 ```bash
 grep 'ROUTE_PATH' {SITEMAP_PATH}
 ```
-Expected: `<loc>{DOMAIN}/ROUTE_PATH</loc>` with appropriate priority
+Expected: `<loc>{DOMAIN}/ROUTE_PATH</loc>`. Add `<lastmod>` only if it is accurate (Google uses it if it is consistently and verifiably accurate)
 
 **14. Prerender config**
 ```bash
@@ -112,26 +121,9 @@ grep -o '<h1[^>]*>[^<]*</h1>' {BUILD_OUTPUT}/ROUTE_PATH/index.html
 ```
 Expected: Exactly one `<h1>` per page
 
-## Sitemap Priority Guidelines
+## Sitemap fields
 
-| Priority | Page Type | Examples |
-|----------|-----------|---------|
-| `1.0` | Homepage | `/` |
-| `0.9` | Main product pages | `/products`, `/pricing` |
-| `0.8` | Major feature pages | `/features/auth`, `/docs` |
-| `0.7` | Feature sub-pages | `/features/auth/sso`, `/integrations` |
-| `0.6` | Use cases, company | `/use-cases`, `/about` |
-| `0.5` | Support, partners | `/support`, `/partners` |
-| `0.3` | Legal pages | `/privacy`, `/terms`, `/cookies` |
-
-## Changefreq Guidelines
-
-| Frequency | When to Use |
-|-----------|-------------|
-| `daily` | Homepage, frequently updated pages |
-| `weekly` | Product pages, feature pages |
-| `monthly` | Company pages, use cases |
-| `yearly` | Legal pages |
+Google ignores `<priority>` and `<changefreq>` values; do not add them. It uses `<lastmod>` "if it's consistently and verifiably (for example by comparing to the last modification of the page) accurate" ([Build a sitemap](https://developers.google.com/search/docs/crawling-indexing/sitemaps/build-sitemap)). Set it only when the page content really changed.
 
 ## Quick Bulk Check
 
@@ -146,13 +138,13 @@ echo "1. Title:       $(grep -c '<title>' $FILE) found"
 echo "2. Description: $(grep -c 'name=\"description\"' $FILE) found"
 echo "3. Canonical:   $(grep -c 'rel=\"canonical\"' $FILE) found"
 echo "4. Robots:      $(grep -c 'name=\"robots\"' $FILE) found"
-echo "5. Keywords:    $(grep -c 'name=\"keywords\"' $FILE) found"
+echo "5. OG URL:      $(grep -c 'og:url' $FILE) found"
 echo "6. OG title:    $(grep -c 'og:title' $FILE) found"
 echo "7. OG image:    $(grep -c 'og:image' $FILE) found"
 echo "8. Twitter card: $(grep -c 'twitter:card' $FILE) found"
 echo "9. Twitter img: $(grep -c 'twitter:image' $FILE) found"
 echo "10. JSON-LD:    $(grep -c 'application/ld+json' $FILE) found"
-echo "11. Schema:     $(grep -o '"@type":"[^"]*"' $FILE | sort -u | wc -l) types"
+echo "11. Schema:     $(grep -o '"@type":"[^"]*"' $FILE | sort -u | wc -l) types (check they match the page)"
 echo "12. Breadcrumb: $(grep -c 'BreadcrumbList' $FILE) found"
 echo "13. Sitemap:    $(grep -c "${PAGE}" {SITEMAP_PATH}) entries"
 echo "14. Prerender:  [check your framework config]"
@@ -172,3 +164,4 @@ echo "=== Done ==="
 1. Rebuild: Run your framework's build command
 2. Re-run checklist to verify fixes appear in prerendered HTML
 3. Run `/agentic-seo audit` for a comprehensive review
+4. Run Google's Rich Results Test and the Schema Markup Validator on the built page and fix errors before reporting done
