@@ -3,6 +3,22 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.7.0] - 2026-10-10
+
+### Added
+- **Three skills from their own repositories, pulled in at build time** (`plugin.manifest.json`, sources of type `git`), so one install gets them. Nothing is copied by hand; the next build picks up what is on each repository's `main`, as it does for the AMP skills.
+  - **`agentic-sql`** (`23blocks-OS/agentic-sql`): run SQL against a production or staging database safely. Check the saved query library first, run only read-only queries, and save findings worth keeping.
+  - **`agentic-support`** (`23blocks-OS/agentic-support`): manage customer support cases with a written trail, and turn recurring problems into runbooks.
+  - **`agentic-seo`** (`23blocks-OS/agentic-seo`): audit, implement and optimize SEO, including structured data, llms.txt and a build audit script.
+- Trigger evals for all three (11 cases): should-fire for a production lookup, a data audit, a customer-reported bug, a runbook request, an SEO audit and structured data; should-not-fire for counting files, looking up a function signature, explaining a JOIN or SEO, and a plain rename.
+
+### Changed
+- The skills' descriptions now say what each skill does and when to use it. `agentic-sql` no longer lists generic phrases such as "look up", "how many" and "audit" as triggers, which would have pulled a production-database skill into everyday requests. The fix is in each skill's own repository.
+- The "no skill should fire" graders know the new skill names.
+
+### Notes
+- If you installed any of these by hand in `~/.claude/skills`, remove that copy so only one version is offered to the model.
+
 ## [1.6.0] - 2026-10-10
 
 ### Added

@@ -1,6 +1,11 @@
 ---
 name: agentic-support
-description: Systematic support case management with documentation, runbooks, and knowledge capture. Use when customer reports bug/issue, investigating production problem, documenting incidents, creating runbooks for recurring issues, or tracking support history per customer.
+description: Manage customer support cases with a written trail. Open a numbered case per customer report, record what was found, resolve it, and turn recurring problems into runbooks that are reused next time. Use when a customer reports a bug or problem, when documenting an incident, when creating a runbook for a recurring issue, or when checking a customer's support history.
+allowed-tools: Read Write Edit Bash Glob Grep
+user-invocable: true
+metadata:
+  author: 23blocks
+  version: 1.0.1
 ---
 
 # agentic-support

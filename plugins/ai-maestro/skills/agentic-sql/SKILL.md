@@ -1,9 +1,13 @@
 ---
 name: agentic-sql
-description: Library-first SQL investigation discipline for production / staging databases. When the user asks for a data lookup, audit, support-ticket investigation, customer-data question, or anything that ends in "run a query against X" — consult the saved query library FIRST, gate every execution with a read-only Postgres role + AST check + LIMIT injection, and curate reusable findings back into the library AFTER they prove their worth. Use this skill whenever a task involves writing or running SQL against a real DB, not a sandbox. Triggers on phrases like "look up", "find this user", "how many", "audit", "investigate", "support ticket", "DB lookup", "check the database".
-version: 1.0.0
+description: Run SQL against a production or staging database safely. Check the saved query library first, run only read-only queries (read-only role, SQL check, LIMIT added), and save findings worth keeping back to the library. Use when a task needs data from a real database, such as a customer lookup, a support-ticket investigation or a data audit. Not for sandbox databases or for code that merely builds queries.
+allowed-tools: Bash Read Write Edit Glob Grep
+compatibility: Needs psql, a read-only Postgres role, and a safe-psql wrapper in the project (set up on first use)
 user-invocable: true
 argument-hint: "[audit|find|add|run|curate|schema] [target]"
+metadata:
+  author: 23blocks
+  version: 1.0.1
 ---
 
 ## First-Time Setup
