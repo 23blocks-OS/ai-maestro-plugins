@@ -24,60 +24,72 @@ Moves a case from inbound/ to the customer's folder, updates INDEX.md status, cr
 ```
 
 Result:
-- Moves: `inbound/S005-agent-204.md` → `customers/intercambio-ccenglish/S005-agent-204.md`
-- Updates INDEX: `| S005 | ... | ✅ RESOLVED (2026-10-10) |`
-- Adds to customer info: `- S005 - Agent 204 responses - ✅ RESOLVED (2026-10-10)`
+- Moves: `inbound/S005-checkout-500.md` → `customers/acme-language-school/S005-checkout-500.md`
+- Updates INDEX: `| S005 | ... | ✅ RESOLVED (2026-01-15) |`
+- Adds to customer info: `- S005 - Checkout returns 500 - ✅ RESOLVED (2026-01-15)`
 
-## Prerequisites
+## Resolve checklist
 
-Before resolving, ensure the case file has:
+Copy and complete before resolving:
 
-- ✅ **Root Cause** identified
-- ✅ **Solution** documented (commits, PRs, changes)
-- ✅ **Verification** steps completed
-- ✅ Date Resolved field filled
+```
+- [ ] Root cause verified
+- [ ] Solution documented (commits, PRs, changes)
+- [ ] Verification done; Date Resolved filled
+- [ ] Customer informed (or no contact needed, stated in the case)
+- [ ] Runbook decision made: create, update, or none
+- [ ] Follow-up owner named
+- [ ] P0/P1 only: impact, timeline, root cause and follow-up recorded in the case
+```
 
-## Customer info creation
+Show the message to the customer and wait for approval before sending it.
 
-If the customer folder doesn't exist, creates:
+## Customer info template
+
+If the customer folder has no `_customer-info.md`, create it:
 
 ```markdown
 # Customer Name
 
-**Customer Type:** (to be filled)  
-**Industry:** (to be filled)  
-**Product:** (to be filled)
+**Customer Type:** End Client / Partner / Internal  
+**Industry:** Industry/Sector  
+**Product:** Product they use
 
 ## Contacts
 
-**Technical Contact:** (to be filled)
+(only as needed to resolve cases)
+- Name / Role / Email: (to be filled)
 
 ## Technical Details
 
-- **Tenant:** (from case context)
-- **Schema:** (from case context)
+- **Tenant:** tenant_name
+- **Schema:** schema_name
+- **Company ID:** 123
+- **Platform:** iOS / Android / Web
+- **Environment:** Production / Staging
 
 ## Support History
 
-- S### - Issue description - ✅ RESOLVED (date)
+- S001 - Case description - STATUS (date)
 
 ## Notes
 
-(to be filled)
+Special considerations, quirks, or context. No secrets; name where they live.
 ```
 
 ## Post-resolution
 
 After resolving:
 
-1. **Check for runbook opportunity** — If this is a recurring pattern, run `/agentic-support runbook-create`
+1. **Runbook decision** — If this is a recurring pattern, run `/agentic-support runbook-create`; if a runbook was used, update it
 2. **Update documentation** — If this revealed a knowledge gap, update docs
-3. **Notify customer** — Close the ticket in your ticketing system
+3. **Update the customer** — Through your support channel, after the approval above
 4. **Clean up** — Remove any temporary investigation files
 
 ## Notes
 
 - Cases cannot be resolved without a filled Resolution section
+- Keep one folder per customer so a data-subject request can be answered from it
 - Customer name is extracted from the case file's Customer field
-- Customer folder names use kebab-case (e.g., `intercambio-ccenglish`)
+- Customer folder names use kebab-case (e.g., `acme-language-school`)
 - Support history in customer info stays in chronological order

@@ -1,116 +1,51 @@
-Guide for maintaining `llms.txt` and `llms-full.txt` files for AI agent discoverability. These files follow the llmstxt.org specification and help non-Google AI agents understand what your site offers.
+Guide for maintaining an `llms.txt` file, only when the site owner wants one.
 
-**Important**: Use the site configuration gathered during first-time setup (`{SITE_NAME}`, `{DOMAIN}`, etc.). If not yet gathered, ask the user first per SKILL.md instructions.
+## Contents
 
-## File Locations
+- Status (dated)
+- When to add one
+- Format (llmstxt.org)
+- Editing workflow
+- Validation
 
-Identify where these files live in the user's project:
-- **llms.txt**: Concise summary (~65 lines)
-- **llms-full.txt**: Comprehensive reference (~600 lines)
-- **Live URLs**: `{DOMAIN}/llms.txt` and `{DOMAIN}/llms-full.txt`
+## Status (dated)
 
-## llmstxt.org Format Specification
+Dated 2026-10-10. Google's guide on generative AI features (https://developers.google.com/search/docs/fundamentals/ai-optimization-guide, last updated 2026-07-10) says Google Search itself doesn't use llms.txt files, and that having one "will neither harm nor help your site's visibility or rankings in Google Search". I could not find documentation from any major AI vendor saying its crawler or assistant reads llms.txt; re-check the vendors' pages (see `reference/crawler-controls.md`) before relying on this.
 
-### Structure
+## When to add one
+
+Add it only if the owner wants it and the cost is low (a short hand-written file). Never claim a ranking or citation benefit. If the site already has good docs and a sitemap, skipping it is a reasonable choice.
+
+**Important**: Use the site configuration gathered during first-time setup (`{SITE_NAME}`, `{DOMAIN}`). If not yet gathered, ask the user first per SKILL.md instructions.
+
+## Format (llmstxt.org)
+
+From https://llmstxt.org (fetched 2026-10-10): the file is Markdown named `llms.txt` at the site root (or a subpath). The only required element is an H1 with the name of the project or site. After it, in order: an optional blockquote summary, zero or more Markdown sections without headings, and zero or more H2-delimited file lists. Each list item has a required link `[name](url)`, optionally followed by `:` and notes. An H2 section named `Optional` marks secondary links an agent can skip when it needs a shorter context. The spec sets no size limit beyond staying small enough to fit in context, and does not define `llms-full.txt`.
 
 ```
 # {SITE_NAME}
 
-> Short description (blockquote)
+> Short description
 
-## Section Name
+## Docs
 
-- [Link Title]({DOMAIN}/path): Brief description of what this link covers
+- [Link Title]({DOMAIN}/path): what this link covers
 
 ## Optional
 
-- [Link Title]({DOMAIN}/path): Non-essential links
+- [Link Title]({DOMAIN}/path): secondary link
 ```
 
-### Rules
+## Editing workflow
 
-1. Start with `# {SITE_NAME}` as H1
-2. Follow with a `> blockquote` summary
-3. Organize links into `## Sections`
-4. Each link: `- [Title](url): description`
-5. Put non-essential links under `## Optional`
-6. Keep descriptions concise (one line per link)
-7. Use full URLs (`{DOMAIN}/...`)
-
-## When to Update
-
-### llms.txt (concise version)
-
-Update when:
-- A new major product/feature is added
-- A new major page is created
-- Key URLs change
-- The product description changes
-
-Content to include:
-- Product overview
-- Key product/feature descriptions (one line each)
-- Documentation link
-- Getting started link
-- API reference link
-
-### llms-full.txt (comprehensive version)
-
-Update when:
-- New API endpoints are added
-- Detailed feature descriptions change
-- New integration guides are published
-- Product capabilities expand
-
-Content to include:
-- Everything in llms.txt PLUS:
-- Detailed product/feature descriptions
-- All API endpoints
-- Integration instructions
-- Authentication details
-- Code examples (brief)
-
-## Editing Workflow
-
-1. **Read current file**: Check what's already there before editing
-2. **Identify the change**: New product? New feature? Updated description?
-3. **Find the right section**: Add new links to the appropriate `## Section`
-4. **Maintain alphabetical order**: Within each section, keep links sorted
-5. **Keep descriptions consistent**: Match the style of existing entries
-6. **Update both files**: If the change affects llms.txt, it likely affects llms-full.txt too
-
-## robots.txt Reference
-
-Both files should be referenced in the site's `robots.txt`:
-
-```
-# AI Agent Discovery
-# llms.txt: {DOMAIN}/llms.txt
-# llms-full.txt: {DOMAIN}/llms-full.txt
-```
-
-Verify this reference exists when updating the llms files.
-
-## Important Notes
-
-- **llms.txt is NOT for Google**: Google uses standard crawling and structured data (JSON-LD). llms.txt is for non-Google AI agents (Claude, GPT, etc.)
-- **Don't duplicate sitemap**: llms.txt is a curated summary, not a comprehensive URL list
-- **Keep llms.txt concise**: It should be scannable by an AI in one pass (~65 lines max)
-- **llms-full.txt can be detailed**: This is where you put comprehensive API and feature documentation
-- **Test readability**: The content should make sense to an AI agent that has no prior context about the site
+1. Read the current file before editing.
+2. Add or change links in the matching section; keep descriptions in the style of existing entries.
+3. Use full URLs (`{DOMAIN}/...`). Do not duplicate the sitemap; the file is a curated summary.
+4. If the site also publishes a longer companion file, update it in the same change. That file is the owner's own convention, not part of the spec.
 
 ## Validation
 
-After updating, verify:
-
 ```bash
-# Check file exists and has content
-wc -l path/to/llms.txt
-wc -l path/to/llms-full.txt
-
-# Verify format starts correctly
-head -5 path/to/llms.txt
-
-# Check robots.txt references
-grep 'llms' path/to/robots.txt
+head -5 path/to/llms.txt          # starts with "# Name", then "> summary"
+grep -c '^- \[' path/to/llms.txt  # every list item is a link
 ```

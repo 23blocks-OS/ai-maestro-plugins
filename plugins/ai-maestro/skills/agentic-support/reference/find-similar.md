@@ -1,6 +1,17 @@
 # find-similar — Find related cases and runbooks
 
-Searches INDEX.md, customer case history, and runbooks for similar issues to help identify patterns and existing solutions.
+## Contents
+
+- Usage
+- What it does
+- Example
+- Search locations
+- Use cases
+- Output format
+- Pattern detection
+- Notes
+
+The first step of every case: search INDEX.md, customer case history, and runbooks before investigating. If a runbook matches, reuse it and link it from the case; if it was wrong or incomplete, fix the runbook.
 
 ## Usage
 
@@ -19,21 +30,21 @@ Searches INDEX.md, customer case history, and runbooks for similar issues to hel
 ## Example
 
 ```bash
-/agentic-support find-similar "204 empty response"
+/agentic-support find-similar "checkout 500 error"
 ```
 
 Returns:
 ```
 Related Cases:
-- S005 - Agent 204 responses - Intercambio (✅ RESOLVED)
-- S001 - API 204 - Verilog (✅ RESOLVED)
+- S005 - Checkout returns 500 - Acme Language School (✅ RESOLVED)
+- S001 - API 500 - [customer B] (✅ RESOLVED)
 
 Applicable Runbooks:
-- R001 - Missing scopes cause 204 responses
+- R001 - Missing scope causes checkout 500
 
-Customer History for Intercambio:
-- S005 - Agent 204 (scope issue)
-- S002 - Identity registration 403 (scope issue)
+Customer History for Acme Language School:
+- S005 - Checkout 500 (scope issue)
+- S002 - Login 403 (scope issue)
 → Pattern: Scope-related issues
 ```
 
@@ -56,13 +67,13 @@ Customer History for Intercambio:
 
 ## Use cases
 
-**Starting investigation:**
+**Before investigating (always):**
 ```bash
 /agentic-support find-similar "authentication failed"
 ```
 → Check if we've seen this before
 
-**Creating runbook:**
+**Before creating a runbook:**
 ```bash
 /agentic-support find-similar "scope missing"
 ```
@@ -70,7 +81,7 @@ Customer History for Intercambio:
 
 **Customer pattern analysis:**
 ```bash
-/agentic-support find-similar "intercambio"
+/agentic-support find-similar "acme"
 ```
 → View customer's issue history
 
@@ -80,23 +91,23 @@ Customer History for Intercambio:
 ## Search Results for: "query terms"
 
 ### Related Cases (3 found)
-1. S005 - Agent 204 responses - Intercambio (✅ RESOLVED 2026-10-10)
-   Root cause: Missing agents:execute scope
-   Location: customers/intercambio-ccenglish/S005-agent-204.md
+1. S005 - Checkout returns 500 - Acme Language School (✅ RESOLVED 2026-01-15)
+   Root cause: Missing orders:write scope
+   Location: customers/acme-language-school/S005-checkout-500.md
 
 2. S001 - Similar issue - Customer (🔴 OPEN)
    Status: Under investigation
    Location: inbound/S001-description.md
 
 ### Applicable Runbooks (1 found)
-1. R001 - Missing scopes cause 204 responses
+1. R001 - Missing scope causes checkout 500
    Category: Authentication
-   When to use: 204 empty responses, authorization failures
-   Location: runbooks/R001-missing-scopes-204.md
+   When to use: checkout 500 errors, authorization failures
+   Location: runbooks/R001-missing-scope-checkout-500.md
 
-### Customer Patterns
-- Intercambio: 2 scope-related issues in past month
-- Verilog: 1 authentication issue
+### Customer Patterns (other customers anonymized)
+- Acme Language School: 2 scope-related issues in past month
+- [customer B]: 1 authentication issue
 ```
 
 ## Pattern detection
@@ -112,4 +123,5 @@ When multiple cases share:
 - Search is case-insensitive
 - Searches descriptions, error messages, and symptoms
 - Closed cases are included (they have solutions)
+- Anonymize customer names, ids and contacts in the output when it is shared outside the customer's own folder; never name other customers
 - Runbooks are prioritized in results (proven solutions)

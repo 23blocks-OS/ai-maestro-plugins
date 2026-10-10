@@ -2,6 +2,16 @@
 
 Health-check the library. Run weekly, or before any large refactor.
 
+## Contents
+
+- Purpose
+- When to run
+- Procedure
+- Output shape
+- Patterns to follow
+- Anti-patterns
+- Implementation hints
+
 ## Purpose
 
 Surface library decay before it bites: orphan files, missing schema references, stale queries, env-coverage gaps, broken anchors. Not a destructive command — `audit` reports, the human decides what to fix.
@@ -32,7 +42,7 @@ Surface library decay before it bites: orphan files, missing schema references, 
    - flag envs with 0 queries (gap)
    - flag envs with > 50% of total queries (concentration risk)
 6. compute staleness:
-   - queries with last-modified > 90 days ago AND not referenced in any recent investigation log
+   - queries with last-modified > 90 days ago AND not referenced in any session log from the last 90 days
 7. report a structured summary
 ```
 
@@ -54,11 +64,11 @@ HEADER COMPLIANCE
   Anchors found in SCHEMA.md:   15 / 16  — Q11 references a section that has been renamed
 
 ENVIRONMENT COVERAGE
-  zoom:            12 queries
-  zoom + search:    1
-  zoom + conv:      1
-  zoom + gateway:   1
-  search + zoom:    1
+  acme:            12 queries
+  acme + search:    1
+  acme + conv:      1
+  acme + gateway:   1
+  search + acme:    1
   conv:             1   (only Q06)
   files:            1
   gateway:          1
@@ -97,9 +107,3 @@ RECOMMENDED ACTIONS
 ## Implementation hints
 
 The audit is mostly file I/O and string parsing — keep it in the wrapper script (or a small Python / Ruby helper) called from the skill. No DB connection required for the basic audit; only the staleness check might benefit from cross-referencing the session log file.
-
-## Related
-
-- [reference/find.md](find.md) — uses the INDEX that audit verifies
-- [reference/schema.md](schema.md) — audit cross-checks schema reference links
-- [reference/curate.md](curate.md) — curate adds queries; audit verifies they were added correctly

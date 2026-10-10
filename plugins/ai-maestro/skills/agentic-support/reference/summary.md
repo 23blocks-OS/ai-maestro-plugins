@@ -1,5 +1,15 @@
 # summary — Generate end-of-session summary
 
+## Contents
+
+- Usage
+- What it does
+- Example output
+- When to generate
+- Summary sections
+- Uses for summaries
+- Notes
+
 Generates a summary of cases worked during the session, including what was resolved, what's pending, and what runbooks were created or used.
 
 ## Usage
@@ -20,53 +30,53 @@ Generates a summary of cases worked during the session, including what was resol
 
 ```markdown
 # Support Session Summary
-**Date:** 2026-10-10  
+**Date:** 2026-01-15  
 **Duration:** 4 hours
 
 ## Cases Resolved (2)
 
-### S005 - Agent 204 responses - Intercambio (CCEnglish)
-- **Root Cause:** Missing agents:execute scope in Auth DB
-- **Solution:** Auth team added scopes Oct 9, OpenAI account funded
-- **Commits:** 986bce51, f48f52d0
-- **Runbook Created:** R001 - Missing scopes cause 204 responses
+### S005 - Checkout returns 500 - Acme Language School
+- **Root Cause:** Missing orders:write scope in Auth DB
+- **Solution:** Auth team added scopes Jan 14, payment gateway account funded
+- **Commits:** a1b2c3d, e4f5a6b
+- **Runbook Created:** R001 - Missing scope causes checkout 500
 - **Status:** ✅ RESOLVED
 
-### S002 - Identity registration 403 - Intercambio (CCEnglish)  
-- **Root Cause:** identities:write scope not granted to GUEST role
+### S002 - Login 403 - Acme Language School  
+- **Root Cause:** sessions:write scope not granted to GUEST role
 - **Solution:** Auth team verified scope exists and granted
 - **Status:** ✅ RESOLVED
 
 ## Cases Pending (1)
 
-### S004 - Identity registration 403 - Verilog
+### S004 - Login 403 - Globex Retail
 - **Status:** 🔴 OPEN
-- **Next Steps:** Verify Verilog GUEST role has identities:write
+- **Next Steps:** Verify Globex Retail GUEST role has sessions:write
 - **Assigned:** Pending Auth team response
 - **Priority:** P1
 
 ## Runbooks Created (1)
 
-### R001 - Missing scopes cause 204 responses
+### R001 - Missing scope causes checkout 500
 - **Category:** Authentication
 - **Based on:** S005
-- **Applicable to:** Any 204 empty response with scope checks
+- **Applicable to:** Any checkout 500 error with scope checks
 
 ## Knowledge Captured
 
 - **Documentation Updated:** 
   - Created docs/REQUIRED_SCOPES.md
-  - Updated support/customers/intercambio-ccenglish/_customer-info.md
+  - Updated support/customers/acme-language-school/_customer-info.md
 
 - **Learnings:**
-  - Jarvis defines scope requirements; Auth implements them
+  - The API defines scope requirements; Auth implements them
   - Never remove scope checks to match Auth DB
-  - OpenAI debt causes 429 rate limits system-wide
+  - An unpaid payment-gateway balance causes 429 rate limits system-wide
 
 ## Next Session Priorities
 
-1. Follow up on S004 (Verilog) - waiting for Auth
-2. Monitor CCEnglish for recurring issues
+1. Follow up on S004 (Globex Retail) - waiting for Auth
+2. Monitor Acme Language School for recurring issues
 3. Consider preventive scopes audit for other customers
 ```
 

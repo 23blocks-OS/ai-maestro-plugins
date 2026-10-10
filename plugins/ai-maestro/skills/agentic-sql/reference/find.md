@@ -13,7 +13,7 @@ Always, before writing any new SQL. No exceptions. The library is the cheap path
 ## Procedure
 
 1. **Read `{INDEX_PATH}`.** It's a markdown table — purpose / business case / environment / file path per row. Parse it.
-2. **Tokenize the user's topic.** Strip stopwords, lemmatize. "Find Camilo's email and see if there's whitespace" → tokens: `email, whitespace, lookup`.
+2. **Tokenize the user's topic.** Strip stopwords, lemmatize. "Find Jane Doe's email and see if there's whitespace" → tokens: `email, whitespace, lookup`.
 3. **Score each row.** Match topic tokens against (a) the Purpose column, (b) the Business case column, (c) the file name. Boost matches on table names mentioned in the topic if the schema doc lists which tables each query touches.
 4. **Return top 5 ranked matches.** Each result includes:
    - Query ID (e.g. `Q12`)
@@ -48,19 +48,19 @@ Found 3 matches in sql_library/INDEX.md for "email whitespace audit":
 
   ★ Q13 — Email whitespace pollution audit (tenant-wide)
     File:     sql_library/queries/email-whitespace-pollution-audit.sql
-    Schema:   user_identities, user_profiles (zoom)
+    Schema:   user_identities, user_profiles (acme)
     Parameters: none (optional :sample_limit for drilldown)
     Score:    0.92 — exact match on "whitespace" + "email" + tables
 
     Q14 — Duplicate-account collision groups under a canonical email
     File:     sql_library/queries/email-collision-groups-for-triage.sql
-    Schema:   user_identities, user_profiles, project_character_users (zoom)
+    Schema:   user_identities, user_profiles, project_character_users (acme)
     Parameters: :min_group_size, :require_atsign
     Score:    0.61 — adjacent (collision triage, not the audit itself)
 
     Q08 — All Gateway/identity rows for an email pattern
     File:     sql_library/queries/identities-by-email-pattern.sql
-    Schema:   user_identities (zoom), users (gateway)
+    Schema:   user_identities (acme), users (gateway)
     Parameters: :email_pattern
     Score:    0.42 — partial match on "email"
 
@@ -70,10 +70,4 @@ that need triage, follow up with Q14.
 
 ## Implementation hints
 
-The library is small enough today (Q01-Q16, 16 entries) that scoring can be a simple keyword-match function over the INDEX.md columns. As the library grows past ~30 queries, swap in an embedding-based retriever (Vanna pattern) — embed each row's purpose + business case + schema reference into a vector store, retrieve top-k by cosine similarity to the topic embedding. The skill should not require the embedding store on day one; it's an upgrade path, not a prerequisite.
-
-## Related
-
-- [reference/add.md](add.md) — what to do when `find` returns no match
-- [reference/run.md](run.md) — how to execute the chosen result safely
-- [reference/curate.md](curate.md) — the workflow's other half (post-investigation)
+While the library has fewer than ~30 queries, scoring can be a simple keyword-match function over the INDEX.md columns. Past that, swap in an embedding-based retriever: embed each row's purpose + business case + schema reference into a vector store, retrieve top-k by cosine similarity to the topic embedding. The skill should not require the embedding store on day one; it's an upgrade path, not a prerequisite.

@@ -1,11 +1,19 @@
 Guide for adding and updating JSON-LD structured data on web pages. Each schema type includes a complete template — replace `{SITE_NAME}`, `{DOMAIN}`, and `{SOCIAL_LINKS}` with the user's actual values from the site configuration.
 
+## Contents
+
+- Critical Rules
+- Schema Types and When to Use Them (SoftwareApplication, Organization, BreadcrumbList, FAQPage, WebPage, Article)
+- Combining Schemas
+- Choosing the Right Schema Combination
+- Validation
+
 **Important**: Use the site configuration gathered during first-time setup. If not yet gathered, ask the user first per SKILL.md instructions.
 
 ## Critical Rules
 
 1. **SSR-safe**: JSON-LD must NOT be wrapped in browser-only guards (e.g., `isPlatformBrowser` in Angular). It must render during SSG/SSR so search engines see it in the HTML source.
-2. **Minimum 2 schemas**: Every page needs at least one content schema + BreadcrumbList.
+2. **Match the visible content**: add only structured data that describes what is on the page; never add a schema just to reach a count. Google says structured data isn't required for generative AI search and there is no special schema.org markup to add (guide last updated 2026-07-10: https://developers.google.com/search/docs/fundamentals/ai-optimization-guide).
 3. **Single script tag**: Combine all schemas into one `<script type="application/ld+json">` using a JSON array.
 4. **Cleanup on destroy**: Always remove the script on component destroy to prevent duplication during SPA navigation.
 
@@ -69,7 +77,7 @@ const schema = {
 
 ### BreadcrumbList
 
-**Use on**: Every page (required as one of the minimum 2 schemas).
+**Use on**: Pages that sit in a hierarchy.
 
 ```typescript
 const schema = {
@@ -98,76 +106,13 @@ const schema = {
 };
 ```
 
-### FAQPage
+### FAQPage (optional, no Google rich result)
 
-**Use on**: Any page with FAQ content. Produces rich snippets in Google search results (expandable Q&A).
-
-```typescript
-const schema = {
-  '@context': 'https://schema.org',
-  '@type': 'FAQPage',
-  'mainEntity': [
-    {
-      '@type': 'Question',
-      'name': 'Question text here?',
-      'acceptedAnswer': {
-        '@type': 'Answer',
-        'text': 'Plain text answer (strip HTML tags from any rich content)'
-      }
-    }
-  ]
-};
-```
-
-**Dynamic FAQ from component data**:
-```typescript
-const faqSchema = {
-  '@context': 'https://schema.org',
-  '@type': 'FAQPage',
-  'mainEntity': this.faqs.map(faq => ({
-    '@type': 'Question',
-    'name': faq.question,
-    'acceptedAnswer': {
-      '@type': 'Answer',
-      'text': faq.answer.replace(/<[^>]*>/g, '')  // Strip HTML
-    }
-  }))
-};
-```
-
-### HowTo
-
-**Use on**: Installation guides, setup pages, getting-started pages.
-
-```typescript
-const schema = {
-  '@context': 'https://schema.org',
-  '@type': 'HowTo',
-  'name': 'How to Set Up [Feature] with {SITE_NAME}',
-  'description': 'Step-by-step guide to...',
-  'step': [
-    {
-      '@type': 'HowToStep',
-      'position': 1,
-      'name': 'Create an Account',
-      'text': 'Sign up and create your first application.',
-      'url': '{DOMAIN}/getting-started'
-    },
-    {
-      '@type': 'HowToStep',
-      'position': 2,
-      'name': 'Install the SDK',
-      'text': 'Install the SDK package in your project.',
-      'url': '{DOMAIN}/docs/installation'
-    }
-  ],
-  'totalTime': 'PT5M'
-};
-```
+Google's FAQ rich results "will no longer appear in Google Search starting May 7, 2026", and its FAQPage documentation page was removed on 2026-06-15 (https://developers.google.com/search/docs/appearance/structured-data/faqpage). FAQPage remains valid schema.org markup that other consumers may read. Add it only if the owner wants it and the page shows the same questions and answers visibly. HowTo rich results were removed in 2023; this skill no longer provides a HowTo template.
 
 ### WebPage
 
-**Use on**: Generic pages that don't fit other types (about, contact, legal).
+**Use on**: Generic pages that don't fit other types (about, contact, legal). WebPage markup produces no rich result; use it only if the owner wants the data.
 
 ```typescript
 const schema = {
@@ -223,7 +168,7 @@ Always combine all schemas for a page into a single JSON array:
 
 ```typescript
 private addStructuredData() {
-  const schemas = [contentSchema, breadcrumbSchema, faqSchema]; // etc.
+  const schemas = [contentSchema, breadcrumbSchema]; // etc.
 
   this.jsonLdScript = this.document.createElement('script');
   this.jsonLdScript.type = 'application/ld+json';
@@ -237,17 +182,17 @@ private addStructuredData() {
 | Page Type | Primary Schema | Additional Schemas |
 |-----------|---------------|-------------------|
 | Product/feature page | SoftwareApplication | BreadcrumbList, Organization |
-| Product page with FAQ | SoftwareApplication | BreadcrumbList, FAQPage |
-| Getting started | HowTo | BreadcrumbList, Organization |
+| Getting started | WebPage (no rich result) | BreadcrumbList |
 | About/company | Organization | BreadcrumbList, WebPage |
 | Legal pages | WebPage | BreadcrumbList |
 | Blog post | Article | BreadcrumbList, Organization |
-| Feature page with FAQ | SoftwareApplication | BreadcrumbList, FAQPage, Organization |
 | Homepage | Organization | WebPage |
 
 ## Validation
 
-After implementing, verify structured data appears in prerendered HTML:
+Before reporting done: run Google's Rich Results Test (https://search.google.com/test/rich-results) and the Schema Markup Validator (https://validator.schema.org) on a built page and fix every error.
+
+Then verify structured data appears in prerendered HTML:
 
 ```bash
 grep 'application/ld+json' {BUILD_OUTPUT}/ROUTE_PATH/index.html
