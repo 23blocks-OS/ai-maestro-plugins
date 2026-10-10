@@ -1,11 +1,11 @@
 {
   "name": "ai-maestro",
-  "version": "1.6.0",
-  "description": "AI agent orchestration — memory search, code graph, AMP messaging, docs search, task planning",
+  "version": "1.7.0",
+  "description": "AI agent orchestration \u2014 memory search, code graph, AMP messaging, docs search, task planning",
   "output": "./plugins/ai-maestro",
   "plugin": {
     "name": "ai-maestro",
-    "version": "1.6.0",
+    "version": "1.7.0",
     "description": "AI agent orchestration: agent messaging (AMP), identity (AID), canvas pages, memory, docs and code graph search, agent management and planning",
     "author": {
       "name": "23blocks"
@@ -27,7 +27,7 @@
     },
     {
       "name": "amp-messaging",
-      "description": "Agent Messaging Protocol (AMP) — email for AI agents",
+      "description": "Agent Messaging Protocol (AMP) \u2014 email for AI agents",
       "type": "git",
       "repo": "https://github.com/agentmessaging/claude-plugin.git",
       "ref": "main",
@@ -38,7 +38,7 @@
     },
     {
       "name": "agent-identity",
-      "description": "Agent Identity (AID) — OAuth 2.0 authentication using AMP Ed25519 identity",
+      "description": "Agent Identity (AID) \u2014 OAuth 2.0 authentication using AMP Ed25519 identity",
       "type": "git",
       "repo": "https://github.com/agentmessaging/agent-identity.git",
       "ref": "main",
@@ -49,7 +49,7 @@
     },
     {
       "name": "agent-actions",
-      "description": "Agent Actions Protocol (AAP) — structured UI-to-agent canvas interactions",
+      "description": "Agent Actions Protocol (AAP) \u2014 structured UI-to-agent canvas interactions",
       "type": "git",
       "repo": "https://github.com/agentmessaging/agent-actions.git",
       "ref": "main",
@@ -66,6 +66,42 @@
       "map": {
         "skills/agent-files": "skills/agent-files",
         "scripts/*.sh": "scripts/"
+      }
+    },
+    {
+      "name": "agentic-sql",
+      "description": "agentic-sql skill, kept in its own repository and pulled in at build time",
+      "type": "git",
+      "repo": "https://github.com/23blocks-OS/agentic-sql.git",
+      "ref": "main",
+      "map": {
+        "SKILL.md": "skills/agentic-sql/SKILL.md",
+        "reference": "skills/agentic-sql/reference",
+        "LICENSE": "skills/agentic-sql/LICENSE"
+      }
+    },
+    {
+      "name": "agentic-support",
+      "description": "agentic-support skill, kept in its own repository and pulled in at build time",
+      "type": "git",
+      "repo": "https://github.com/23blocks-OS/agentic-support.git",
+      "ref": "main",
+      "map": {
+        "SKILL.md": "skills/agentic-support/SKILL.md",
+        "reference": "skills/agentic-support/reference"
+      }
+    },
+    {
+      "name": "agentic-seo",
+      "description": "agentic-seo skill, kept in its own repository and pulled in at build time",
+      "type": "git",
+      "repo": "https://github.com/23blocks-OS/agentic-seo.git",
+      "ref": "main",
+      "map": {
+        "SKILL.md": "skills/agentic-seo/SKILL.md",
+        "reference": "skills/agentic-seo/reference",
+        "scripts": "skills/agentic-seo/scripts",
+        "LICENSE": "skills/agentic-seo/LICENSE"
       }
     }
   ]

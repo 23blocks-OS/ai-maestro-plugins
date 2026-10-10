@@ -1,9 +1,9 @@
 # AI Maestro Plugin
 
-Built from plugin.manifest.json with 5 sources.
+Built from plugin.manifest.json with 8 sources.
 
-**Skills:** 10 | **Scripts:** 61
+**Skills:** 13 | **Scripts:** 61
 
-Built at: 2026-10-10T05:08:41Z
+Built at: 2026-10-10T08:06:46Z
 
 See the [main repo](https://github.com/23blocks-OS/ai-maestro-plugins) for source files and build instructions.
