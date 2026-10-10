@@ -3,6 +3,15 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.6.0] - 2026-10-10
+
+### Added
+- **`aim-secret-management` skill.** Teaches an agent to use credentials without seeing them: ask the user with `aim-secret request NAME` (a card appears in the AI Maestro chat with a masked field; in Claude Code the secrets mod opens a form), end the turn, get told when it is stored, then run commands with `aim-secret exec --use NAME -- <command>`. Also covers what to do when a value is pasted into the conversation, and what never to do (read the vault, write a secret to a file, run `aim-secret set`). Needs AI Maestro 0.65.0 or later.
+- Trigger evals for it: three should-fire cases (a key that is not set up, a pasted key, a stored token), a second pasted-credential case, and a should-not-fire case. On Sonnet, 5 runs each: 5/5 for the pasted-credential cases, 3/3 for the others. The first description fired on 2 of 3 pasted keys, so it now names that situation.
+
+### Changed
+- The "no skill should fire" graders know the new skill's name.
+
 ## [1.4.0] - 2026-10-05
 
 ### Changed

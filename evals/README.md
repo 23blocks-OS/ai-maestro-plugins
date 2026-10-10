@@ -1,7 +1,7 @@
 # Plugin evals
 
 `triggers/` checks that each skill fires when it should and that no skill fires
-on unrelated requests (12 should-fire cases, 4 should-not). Graders are
+on unrelated requests (16 should-fire cases, 5 should-not). Graders are
 `tool_used` checks, so they cost nothing beyond the runs themselves.
 
 The suite lives here, not in `plugins/ai-maestro/` (the build output, rewritten
