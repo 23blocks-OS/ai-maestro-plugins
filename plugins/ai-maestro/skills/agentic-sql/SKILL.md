@@ -2,12 +2,12 @@
 name: agentic-sql
 description: Run SQL against a production or staging database safely. Check the saved query library first, run only read-only queries (read-only role, SQL check, LIMIT added), and save findings worth keeping back to the library. Use when a task needs data from a real database, such as a customer lookup, a support-ticket investigation or a data audit. Not for sandbox databases or for code that merely builds queries.
 allowed-tools: Bash Read Write Edit Glob Grep
-compatibility: Needs psql, a read-only Postgres role, and a safe-psql wrapper in the project (set up on first use)
+compatibility: Needs Python 3 with the packages in requirements.txt (sqlglot, psycopg) and a read-only Postgres role. The wrapper script ships with the skill
 user-invocable: true
 argument-hint: "[audit|find|add|run|curate|schema] [target]"
 metadata:
   author: 23blocks
-  version: 1.1.0
+  version: 1.2.0
 ---
 
 ## First-Time Setup
@@ -21,12 +21,12 @@ On first invocation in a project, the skill auto-extracts these from `CLAUDE.md`
 | `{SCHEMA_DOC_PATH}` | Schema reference doc | `sql_library/SCHEMA.md` |
 | `{DB_ENVS}` | Named environments + connection variables | `acme (ACME_DATABASE_URL), files (FILES_DATABASE_URL), …` |
 | `{READ_ONLY_ROLE}` | Postgres role with SELECT-only grants the agent connects as | `agentic_sql_ro` |
-| `{SAFE_PSQL_WRAPPER}` | Path to the wrapper that applies the SQL gate | `bin/safe_psql.sh` |
+| `{SAFE_PSQL_WRAPPER}` | The wrapper that applies the SQL gate. It ships with this skill as `scripts/safe_psql.py`; point this at your own only if you replace it | `python3 <skill dir>/scripts/safe_psql.py` |
 | `{MAX_ROWS}` | Default LIMIT injected when query has none | `1000` |
 | `{STATEMENT_TIMEOUT}` | `statement_timeout` set on the read-only role | `30s` |
 | `{DISPLAY_ROWS}` | Rows shown to the user before offering more | `50` |
 
-Prerequisite: `{SAFE_PSQL_WRAPPER}` must exist and be on the path. If it does not, stop and tell the user. Never run `psql` directly against production or staging.
+Prerequisite: run `pip install -r <skill dir>/requirements.txt` once, and give the wrapper a read-only role (see `reference/run.md`). The wrapper refuses to run as a role that could write, so a wrong setup stops instead of working unsafely. If `{SAFE_PSQL_WRAPPER}` cannot run, stop and tell the user. Never run `psql` directly against production or staging.
 
 ## When to use this skill
 

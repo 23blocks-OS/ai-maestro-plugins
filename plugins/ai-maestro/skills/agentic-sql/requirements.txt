@@ -1,0 +1,2 @@
+sqlglot>=30,<31
+psycopg[binary]>=3.2,<4
