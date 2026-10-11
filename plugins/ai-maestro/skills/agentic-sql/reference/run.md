@@ -7,7 +7,7 @@ Execute a saved query (by ID like `Q17`) or a freshly-written one through the SQ
 - Purpose
 - When to run
 - The SQL gate (layers 1-3)
-- What the wrapper must do
+- The wrapper: scripts/safe_psql.py
 - Procedure
 - Patterns to follow
 - Anti-patterns
@@ -70,9 +70,25 @@ On any rejection, return the reason to the agent so it can rewrite the query and
 - Open a fresh connection per query, so no session state survives between queries.
 - Inject `LIMIT {MAX_ROWS}` on the outermost SELECT when it has none. Do not inject when the author wrote one; they may have meant the larger result.
 
-## What the wrapper must do
+## The wrapper: `scripts/safe_psql.py`
 
-The skill does not provide a wrapper; the project must have one at `{SAFE_PSQL_WRAPPER}` (see the prerequisite in SKILL.md). It must:
+The skill ships a wrapper that does everything below. Usage:
+
+```bash
+export ACME_DATABASE_URL=...   # or: aim-secret exec --use ACME_DATABASE_URL -- <command>
+python3 scripts/safe_psql.py --env ACME_DATABASE_URL --query-id Q12 \
+  --sql "SELECT id, email FROM users WHERE id = :id" --param id=7
+python3 scripts/safe_psql.py --check-only --sql "..."   # gate only, no database
+```
+
+Exit codes: 0 ok, 2 refused by the gate (reasons on stderr), 3 the role is not safe, 4 connection or query error, 5 usage error. Extra allowed functions go in a file passed with `--allowed-functions` (one name per line); the default list covers counting, text, dates, JSON, windows and `generate_series`. The wrapper also:
+
+- sends the statement it regenerated from the checked tree, never your original text;
+- binds `:name` parameters on the server, so values are never spliced into the SQL;
+- refuses to run as a superuser, or a role with bypassrls, createrole, createdb or membership in `pg_write_all_data`, `pg_read_server_files`, `pg_write_server_files`, `pg_execute_server_program`, `pg_signal_backend`;
+- never prints the connection URL, and with `--log` writes only the query id, parameter names, row count and duration.
+
+A different wrapper must keep this behavior:
 
 - Parse and gate the SQL as in layer 2, and support a dry-run mode that stops after the gate.
 - Inject the LIMIT as in layer 3.

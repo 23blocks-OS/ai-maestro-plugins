@@ -1,11 +1,11 @@
 {
   "name": "ai-maestro",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "description": "AI agent orchestration \u2014 memory search, code graph, AMP messaging, docs search, task planning",
   "output": "./plugins/ai-maestro",
   "plugin": {
     "name": "ai-maestro",
-    "version": "1.7.1",
+    "version": "1.7.2",
     "description": "AI agent orchestration: agent messaging (AMP), identity (AID), canvas pages, memory, docs and code graph search, agent management and planning",
     "author": {
       "name": "23blocks"
@@ -77,6 +77,8 @@
       "map": {
         "SKILL.md": "skills/agentic-sql/SKILL.md",
         "reference": "skills/agentic-sql/reference",
+        "scripts": "skills/agentic-sql/scripts",
+        "requirements.txt": "skills/agentic-sql/requirements.txt",
         "LICENSE": "skills/agentic-sql/LICENSE"
       }
     },

@@ -3,6 +3,11 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.7.2] - 2026-10-10
+
+### Added
+- `agentic-sql` 1.2.0 now ships its wrapper, `scripts/safe_psql.py`, with `requirements.txt`. The skill used to tell agents to use a wrapper that did not exist. The manifest now copies the `scripts` folder and `requirements.txt` into the installed skill. Agents run `pip install -r requirements.txt` once.
+
 ## [1.7.1] - 2026-10-10
 
 ### Fixed
