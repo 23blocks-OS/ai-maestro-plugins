@@ -204,6 +204,14 @@ def check_role(conn):
             cur.execute("SELECT pg_has_role(current_user, %s, 'member')", (rolname,))
             if cur.fetchone()[0]:
                 problems.append(f"member of {rolname}")
+        cur.execute("""SELECT n.nspname || '.' || c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                       WHERE c.relkind IN ('r','p') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname !~ '^pg_toast'
+                         AND (has_any_column_privilege(current_user, c.oid, 'INSERT') OR has_any_column_privilege(current_user, c.oid, 'UPDATE')
+                              OR has_table_privilege(current_user, c.oid, 'DELETE') OR has_table_privilege(current_user, c.oid, 'TRUNCATE'))
+                       ORDER BY 1 LIMIT 5""")
+        writable = [r[0] for r in cur.fetchall()]
+        if writable:
+            problems.append("can write tables (" + ", ".join(writable) + "); a read login must have SELECT only")
     conn.rollback()
     return problems
 
@@ -303,7 +311,7 @@ def main(argv=None):
             _log(a, "unsafe-role", 0, int((time.time() - t0) * 1000), names)
             return 3
         with conn.cursor() as cur:
-            cur.execute(send, params or None)
+            cur.execute(send, params)  # always a dict, even an empty one: the gate wrote literal % as %%, which only a parameter dict turns back into %
             columns = [d.name for d in cur.description] if cur.description else []
             rows = cur.fetchall() if cur.description else []
         conn.rollback()

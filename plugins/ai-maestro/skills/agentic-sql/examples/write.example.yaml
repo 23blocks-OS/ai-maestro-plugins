@@ -1,0 +1,10 @@
+# Copy to .safe-psql/write.yaml in your project (or ~/.safe-psql/write.yaml). Nothing is writable until you list it.
+allow_hard_delete: false        # global switch. Even with delete: true on a table, DELETE stays refused while this is false
+default_max_rows: 25            # most rows one change may touch; a bigger match is refused
+approval_ttl_minutes: 10        # a request must be approved within this time, and applied within this time after approval
+environments:
+  production: { confirm_by_typing: true }   # the approver must type "production"; other environments need "yes"
+tables:
+  customers: { insert: true, update: [plan, email], max_rows: 25 }   # only these columns may change
+  notes:     { insert: true, update: true, delete: true, max_rows: 100 }
+# log: /var/log/safe-psql/write.log   # default: ~/.safe-psql/write.log (no values are ever written to it)

@@ -3,6 +3,14 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.8.0] - 2026-10-12
+
+### Added
+- `agentic-sql` 1.3.0 ships **the write door**: `safe-psql-write` lets an agent propose one `INSERT` or `UPDATE` (`DELETE` only when hard delete is turned on; off by default). A person approves that exact statement in a real terminal before it runs once. Own limited database login, settings file listing the tables and columns that may change, dry run that is rolled back, no values in the log. See the skill's `reference/write.md` and `examples/write.example.yaml`. The manifest now copies the `examples` folder.
+
+### Fixed
+- `agentic-sql`: the read command sent a literal `%` as `%%` when the query had no parameters, so `WHERE name = '100%'` matched the wrong rows. It also now refuses a database login that can write.
+
 ## [1.7.4] - 2026-10-12
 
 ### Added
