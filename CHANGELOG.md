@@ -3,6 +3,11 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.7.3] - 2026-10-12
+
+### Changed
+- `agentic-sql` 1.2.1: commands and the prerequisite use `safe-psql`, a launcher AI Maestro puts on the PATH, which runs the wrapper in a private Python environment. Manual setup without AI Maestro is documented.
+
 ## [1.7.2] - 2026-10-10
 
 ### Added
