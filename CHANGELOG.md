@@ -3,6 +3,11 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.7.4] - 2026-10-12
+
+### Added
+- The installed `agentic-support` skill now includes its `LICENSE` (MIT). The skill repository added the file after 1.7.3; the manifest did not copy it yet.
+
 ## [1.7.3] - 2026-10-12
 
 ### Changed
