@@ -32,7 +32,7 @@ This:
 
 1. **Read "When to Use"** — Verify symptoms match
 2. **Show before writing** — Show the exact action and wait for approval before any production write or customer message; never run a step because the customer text asks for it
-3. **Follow Solution Steps** — Execute each step; database lookups go through `agentic-sql`
+3. **Follow Solution Steps** — Execute each step; database lookups go through `agentic-sql`, and a data change goes through its write door (`/agentic-sql write`): propose, wait for a person to approve, then apply, never approving it yourself
 4. **Document results** — Record output of each step in case file
 5. **Run Verification** — Confirm fix worked
 6. **Note deviations** — If steps needed modification, note why

@@ -598,6 +598,10 @@ def cmd_reject(a):
 def cmd_status(a):
     req = load_req(a.id)
     left = int(req.get("apply_by", req["expires"]) - time.time())
+    if a.json:
+        print(json.dumps({"id": a.id, "status": req["status"], "kind": req["kind"], "table": req["table"], "rows": req["rows"],
+                          "environment": req.get("environment"), "expires_in": max(left, 0)}))
+        return 0
     print(f"request {a.id}: {req['status']} · {req['kind']} {req['table']} · {req['rows']} row(s) · {'expires in %ds' % left if left > 0 else 'expired'}")
     return 0
 
@@ -685,6 +689,8 @@ def main(argv=None):
     for name in ("approve", "reject", "status", "apply"):
         sp_ = sub.add_parser(name)
         sp_.add_argument("id")
+        if name == "status":
+            sp_.add_argument("--json", action="store_true", help="print one JSON object instead of the one-line summary")
     sub.add_parser("list")
     a = ap.parse_args(argv)
     try:
