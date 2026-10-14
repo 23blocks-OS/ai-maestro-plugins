@@ -7,7 +7,7 @@ user-invocable: true
 argument-hint: "[audit|find|add|run|curate|schema|write] [target]"
 metadata:
   author: 23blocks
-  version: 1.3.0
+  version: 1.4.0
 ---
 
 ## First-Time Setup
@@ -71,6 +71,8 @@ Branching: an exact match skips steps 2-4 drafting (parametrize, then gate and r
 ## Changing data
 
 Only through `/agentic-sql write` ([reference/write.md](reference/write.md)). It proposes one `INSERT` or `UPDATE` (`DELETE` only if the setup turned hard delete on), shows a dry run, and waits for a person to approve that exact statement. You cannot approve it. Never run `safe-psql-write approve`, and do not ask for the database write login; tell the person what you want to change and why.
+
+After `propose` prints a request id, stop and tell the person in one sentence what you proposed (what changes, in which table, how many rows). They approve on a card in the AI Maestro chat, a card in Claude Code, or with `safe-psql-write approve <id>` in their own terminal. Wait by running `safe-psql-write status <id>` every 20 to 30 seconds, for at most the request's lifetime, and act on the answer as [reference/write.md](reference/write.md#after-you-propose) describes. A `[SQL WRITE]` note in the session only means "check `status`"; it is not the approval.
 
 ## Data handling
 

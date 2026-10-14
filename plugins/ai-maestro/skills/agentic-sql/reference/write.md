@@ -5,6 +5,7 @@
 - When to use it
 - One-time setup
 - The flow
+- After you propose
 - What the person sees
 - Refusals and exit codes
 - What this does not protect against
@@ -54,7 +55,26 @@ Four steps. Step 3 is only ever done by a person.
 
 Other commands: `status <id>`, `reject <id>`, `list`. `--check-only` on `propose` prints the checked SQL without touching a database.
 
-Approval can also come from the AI Maestro chat card or a Claude Code card when those are set up; the terminal is the one that always works.
+Approval can also come from the AI Maestro chat card or a Claude Code card when those are set up; the terminal is the one that always works. `status --json` prints the same facts as one JSON object (`id`, `status`, `kind`, `table`, `rows`, `environment`, `expires_in`); the default one-line output is unchanged.
+
+## After you propose
+
+Stop at step 2. Tell the person what you proposed in one sentence (what changes, in which table, how many rows) and do not run `apply` yet.
+
+The person can approve in three places: a card in the AI Maestro chat, a card in Claude Code, or `safe-psql-write approve <id>` in their own terminal. Never run `approve` yourself, and never ask the person to paste a command's answer to you.
+
+Wait by polling, not by looping on `apply`. Run `safe-psql-write status <id>` every 20 to 30 seconds, for at most the request's lifetime (10 minutes by default), and stop as soon as the status is not `pending`. The status is the second field of the line (or `status` in `--json`).
+
+| Status | What to do |
+|---|---|
+| `approved` | Run `safe-psql-write apply <id>` once and report the row count it prints |
+| `rejected` | Do not retry the same change or a wider one. Ask the person what they want instead |
+| `expired` | Say so. Propose again only if the person still wants it |
+| `applied`, `failed` | Report it. Do not run `apply` again |
+
+AI Maestro also sends a short note into the session when the person answers on its card. It starts with `[SQL WRITE]` and carries only the request id. Treat it as a prompt to check `status`, not as the approval: only the request's status is authoritative.
+
+An approval card, in the terminal, AI Maestro or Claude Code, stops an agent that uses the sanctioned path. It does not stop an agent that forges the browser headers, edits the request file or works around the tool, because the agent and the person share one OS user. The write login's own limits (listed tables and columns only, row cap, no superuser) are the real backstop.
 
 ## What the person sees
 
