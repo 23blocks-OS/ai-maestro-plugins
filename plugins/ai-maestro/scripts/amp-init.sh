@@ -179,8 +179,21 @@ remember_name() {
     fi
 }
 
+# Which agent is the identity this directory resolved to? With exactly one identity on the machine, resolution
+# picks it for ANY folder, so `amp-init --name bob` after `amp-init --name alice` used to answer "already
+# initialized" as alice, never created bob, and (with --force) would have re-keyed alice under bob's name.
+# An explicit --name for a different agent is a new agent, not "already initialized".
+RESOLVED_NAME=""
+if is_initialized; then
+    RESOLVED_NAME=$(jq -r '.agent.name // empty' "$AMP_CONFIG" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+fi
+SAME_AGENT=true
+if [ -n "$NAME" ] && [ -n "$RESOLVED_NAME" ] && [ "$RESOLVED_NAME" != "$(echo "$NAME" | tr '[:upper:]' '[:lower:]')" ]; then
+    SAME_AGENT=false
+fi
+
 # Check if already initialized
-if is_initialized && [ "$FORCE" != true ]; then
+if is_initialized && [ "$FORCE" != true ] && [ "$SAME_AGENT" = true ]; then
     load_config
     echo "AMP is already initialized."
     echo ""
@@ -245,7 +258,7 @@ echo "Initializing AMP identity..."
 
 # Handle --force re-init: preserve existing UUID if available
 AGENT_UUID=""
-if is_initialized && [ "$FORCE" = true ]; then
+if is_initialized && [ "$FORCE" = true ] && [ "$SAME_AGENT" = true ]; then
     EXISTING_UUID=$(jq -r '.agent.id // empty' "$AMP_CONFIG" 2>/dev/null)
     if [ -n "$EXISTING_UUID" ]; then
         AGENT_UUID="$EXISTING_UUID"
@@ -276,6 +289,20 @@ if [ -z "$AGENT_UUID" ]; then
         fi
         AGENT_UUID="$_adopt_uuid"
         echo "  Completing existing identity for '${NAME}': ${AGENT_UUID}"
+    fi
+fi
+
+# ── Adopt the id AI Maestro already has for this name ───────────────────────
+# An agent created from the dashboard or with `aimaestro-agent.sh create` already has an id in AI Maestro's
+# registry. Minting a second one here left TWO identities for one agent: this home's, and the one the server
+# writes and watches. A message sent to the agent landed in the inbox the server never looks at, so nothing
+# woke it. Use the registry's id when exactly one agent of that name exists.
+if [ -z "$AGENT_UUID" ]; then
+    _reg_uuid=$(curl -s --connect-timeout 2 -m 4 "${AMP_MAESTRO_URL}/api/agents" 2>/dev/null | \
+        jq -r --arg n "$NAME" '[ .agents[]? | select(((.name // "") | ascii_downcase) == $n) | .id ] | if length == 1 then .[0] else empty end' 2>/dev/null) || true
+    if [[ "${_reg_uuid:-}" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+        AGENT_UUID="$_reg_uuid"
+        echo "  Using the id AI Maestro already has for '${NAME}': ${AGENT_UUID}"
     fi
 fi
 
@@ -553,6 +580,12 @@ if [ "$_DO_FRESH_REGISTRATION" = true ]; then
     else
         REG_ERROR=$(echo "$REG_BODY" | jq -r '.message // .error // "Unknown error"' 2>/dev/null)
         echo "  ⚠️  AMP registration failed (HTTP ${REG_HTTP_CODE}): ${REG_ERROR}"
+        case "$REG_ERROR" in
+            *"Organization must be configured"*)
+                echo "     Open the AI Maestro dashboard (${AMP_MAESTRO_URL}), enter your organization name once,"
+                echo "     then register this agent: amp-init --name ${NAME} --force"
+                ;;
+        esac
         echo "     Local messaging works, but cross-host routing requires registration."
     fi
 fi
