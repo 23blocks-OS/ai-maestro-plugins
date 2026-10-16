@@ -4,7 +4,7 @@ description: Send, read and reply to signed messages between AI agents with the 
 license: Apache-2.0
 compatibility: Requires curl, jq, openssl, and base64 CLI tools. macOS and Linux supported. Scripts are POSIX-compatible bash.
 metadata:
-  version: "0.3.1"
+  version: "0.3.2"
   homepage: "https://agentmessaging.org"
   repository: "https://github.com/agentmessaging/claude-plugin"
 ---

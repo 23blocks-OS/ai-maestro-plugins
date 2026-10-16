@@ -196,7 +196,7 @@ if [ -z "${AMP_DIR:-}" ]; then
                     | (map(.len) | max) as $mx
                     | map(select(.len == $mx))
                     | if length == 1 then .[0].name else empty end
-                ' 2>/dev/null)
+                ' 2>/dev/null) || true   # server down or not JSON: no hint, never an exit (set -e, pipefail)
         fi
         if [ -n "$_amp_hint" ]; then
             _amp_uuid=$(_index_lookup "$_amp_hint" 2>/dev/null) || true
@@ -236,7 +236,9 @@ if [ -z "${AMP_DIR:-}" ]; then
                     AMP_DIR="${AMP_AGENTS_BASE}/${_amp_uuid}"
                     _amp_resolved=true
                 fi
-            elif [ "$_amp_count" != "0" ]; then
+            elif [ "$_amp_count" != "0" ] && [ "${AMP_ALLOW_UNRESOLVED:-}" != "1" ]; then
+                # (amp-init sets AMP_ALLOW_UNRESOLVED: creating the third agent on a machine must not require
+                # that one of the first two be picked.)
                 echo "Error: Multiple AMP agents found. Use --id <uuid>" >&2
                 echo "To name this session once: amp-init --name <your-agent> --remember (or set CLAUDE_AGENT_NAME)." >&2
                 echo "" >&2
@@ -936,7 +938,9 @@ generate_uuid() {
         uuidgen | tr '[:upper:]' '[:lower:]'
     else
         # Fallback: generate from /dev/urandom (works on any POSIX system)
-        od -x /dev/urandom | head -1 | awk '{print $2$3"-"$4"-4"substr($5,2)"-"substr($6,1,1)"a"substr($6,2)"-"$7$8$9}'
+        # xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx, y = a (variant). The fourth group is "a" + 3 hex digits: it used to
+        # be 5 characters, which is not a UUID, and every later check that tests for one then took the folder for a name.
+        od -x /dev/urandom | head -1 | awk '{print $2$3"-"$4"-4"substr($5,2)"-a"substr($6,2)"-"$7$8$9}'
     fi
 }
 
@@ -951,7 +955,7 @@ get_public_key_hex() {
 
     # Extract raw public key bytes and convert to hex
     $OPENSSL_BIN pkey -pubin -in "${public_key}" -outform DER 2>/dev/null | \
-        tail -c 32 | xxd -p | tr -d '\n'
+        tail -c 32 | od -An -tx1 | tr -d ' \n'
 }
 
 # Sign a message
@@ -1105,7 +1109,7 @@ generate_message_id() {
     local timestamp
     timestamp=$(date +%s)
     local random
-    random=$(head -c 4 /dev/urandom | xxd -p)
+    random=$(head -c 4 /dev/urandom | od -An -tx1 | tr -d ' \n')
     echo "msg_${timestamp}_${random}"
 }
 
@@ -1663,7 +1667,7 @@ generate_attachment_id() {
         timestamp="$(date +%s)000"
     fi
     local random
-    random=$(head -c 4 /dev/urandom | xxd -p)
+    random=$(head -c 4 /dev/urandom | od -An -tx1 | tr -d ' \n')
     echo "att_${timestamp}_${random}"
 }
 
