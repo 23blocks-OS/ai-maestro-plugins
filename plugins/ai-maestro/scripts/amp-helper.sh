@@ -183,11 +183,15 @@ if [ -z "${AMP_DIR:-}" ]; then
         done
         # (b) Else ask AI Maestro which agent UNIQUELY owns this cwd.
         if [ -z "$_amp_hint" ]; then
+            # A broad folder ($HOME, /tmp, /) is never evidence that a session below it belongs to the
+            # agent that claims it: any scratch folder would be taken for that agent's. Such an owner
+            # matches only when the session is in that exact folder.
+            _amp_broad=$(jq -cn --arg h "$HOME" '["/", "/private", "/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp", "/Users", "/home", $h, ($h | sub("/[^/]*$"; ""))]')
             _amp_hint=$(curl -s --connect-timeout 1 "${AMP_MAESTRO_URL:-http://localhost:23000}/api/agents" 2>/dev/null | \
-                jq -r --arg cwd "$_amp_cwd" '
+                jq -r --arg cwd "$_amp_cwd" --argjson broad "$_amp_broad" '
                     [ .agents[]
                       | (.workingDirectory // .session.workingDirectory // "") as $wd
-                      | select($wd != "" and ($cwd == $wd or ($cwd | startswith($wd + "/"))))
+                      | select($wd != "" and ($cwd == $wd or (($broad | index($wd)) == null and ($cwd | startswith($wd + "/")))))
                       | {name: .name, len: ($wd | length)} ]
                     | (map(.len) | max) as $mx
                     | map(select(.len == $mx))
@@ -218,7 +222,7 @@ if [ -z "${AMP_DIR:-}" ]; then
                 _amp_resolved=true
             fi
         fi
-        unset _amp_cwd _amp_hint _amp_d _amp_s _amp_uuid
+        unset _amp_cwd _amp_hint _amp_d _amp_s _amp_uuid _amp_broad
     fi
 
     # Priority 4: Single agent auto-select (convenience for solo setups)
@@ -234,6 +238,7 @@ if [ -z "${AMP_DIR:-}" ]; then
                 fi
             elif [ "$_amp_count" != "0" ]; then
                 echo "Error: Multiple AMP agents found. Use --id <uuid>" >&2
+                echo "To name this session once: amp-init --name <your-agent> --remember (or set CLAUDE_AGENT_NAME)." >&2
                 echo "" >&2
                 echo "Available agents:" >&2
                 while IFS= read -r _entry; do
