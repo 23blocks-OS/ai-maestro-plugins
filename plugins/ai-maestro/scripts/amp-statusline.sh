@@ -195,11 +195,13 @@ elif [ -n "$CWD" ]; then
             fi
         fi
     fi
+    # A broad folder ($HOME, /tmp, /) matches only when the session is in that exact folder.
+    _broad=$(jq -cn --arg h "$HOME" '["/", "/private", "/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp", "/Users", "/home", $h, ($h | sub("/[^/]*$"; ""))]')
     MAESTRO_AGENT=$(echo "$_agents_json" | \
-        jq -r --arg cwd "$CWD" '
+        jq -r --arg cwd "$CWD" --argjson broad "$_broad" '
             [ .agents[]
               | (.workingDirectory // .session.workingDirectory // "") as $wd
-              | select($wd != "" and ($cwd == $wd or ($cwd | startswith($wd + "/"))))
+              | select($wd != "" and ($cwd == $wd or (($broad | index($wd)) == null and ($cwd | startswith($wd + "/")))))
               | {name: .name, len: ($wd | length)} ]
             | (map(.len) | max) as $mx
             | map(select(.len == $mx))
@@ -345,6 +347,9 @@ if [ -n "$AGENT_ADDRESS" ]; then
         ROW1="$AGENT_ADDRESS"
     fi
     AMP_PART="${ROW1} | ${UNREAD_PART}"
+elif [ -z "$AGENT_UUID" ] && [ -z "$AGENT_NAME" ]; then
+    # Nothing says which agent this session is. Registering did not fail; the session has no name.
+    AMP_PART="AMP: this session has no agent name (set CLAUDE_AGENT_NAME, or run amp-init --name <agent> --remember)"
 else
     AMP_PART="AMP: not configured (run amp-init)"
 fi

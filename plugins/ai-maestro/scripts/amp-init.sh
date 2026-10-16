@@ -29,6 +29,7 @@ TENANT=""
 AUTO_DETECT=false
 FORCE=false
 REPAIR_CONFIG=false
+REMEMBER=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -48,6 +49,10 @@ while [[ $# -gt 0 ]]; do
             FORCE=true
             shift
             ;;
+        --remember)
+            REMEMBER=true
+            shift
+            ;;
         --repair-config)
             REPAIR_CONFIG=true
             shift
@@ -65,6 +70,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --repair-config      Fix a name/address mismatch in place."
             echo "                       Keeps the existing keys, agent id and"
             echo "                       registrations — unlike --force."
+            echo "  --remember           Write CLAUDE_AGENT_NAME into this folder's .claude/settings.local.json,"
+            echo "                       so every Claude Code session started here knows which agent it is"
             echo "  --help, -h           Show this help"
             echo ""
             echo "Examples:"
@@ -135,6 +142,43 @@ if [ "$REPAIR_CONFIG" = true ]; then
     exit 0
 fi
 
+# Write CLAUDE_AGENT_NAME into this folder's .claude/settings.local.json (the hint Claude Code injects
+# into every session started here, and that amp-* and the status line read), keeping its other settings.
+# Refuses a broad folder, where the hint would name this agent for unrelated sessions.
+is_broad_dir() {
+    case "$1" in
+        /|/tmp|/private/tmp|/var/tmp|/private/var/tmp|/private|/Users|/home|"$HOME"|"$(dirname "$HOME")") return 0 ;;
+    esac
+    return 1
+}
+remember_name() {
+    local name="$1" dir="$PWD" file base
+    if is_broad_dir "$dir"; then
+        echo "  ⚠️  Not writing a name hint in ${dir}: it is too broad (every session below it would be named '${name}')." >&2
+        echo "     cd into the project folder this agent works in and run: amp-init --name ${name} --remember" >&2
+        return 1
+    fi
+    file="${dir}/.claude/settings.local.json"
+    if [ -f "$file" ]; then
+        if ! jq -e 'type == "object"' "$file" >/dev/null 2>&1; then
+            echo "  ⚠️  ${file} is not a JSON object; left alone. Add env.CLAUDE_AGENT_NAME=${name} by hand." >&2
+            return 1
+        fi
+        base=$(cat "$file")
+    else
+        base='{}'
+    fi
+    mkdir -p "${dir}/.claude"
+    if printf '%s' "$base" | jq --arg n "$name" '.env = ((.env // {}) + {CLAUDE_AGENT_NAME: $n})' > "${file}.tmp" 2>/dev/null; then
+        mv "${file}.tmp" "$file"
+        echo "  ✅ This folder now knows it is '${name}' (${file}). Restart Claude Code here for it to take effect."
+    else
+        rm -f "${file}.tmp"
+        echo "  ⚠️  Could not update ${file}" >&2
+        return 1
+    fi
+}
+
 # Check if already initialized
 if is_initialized && [ "$FORCE" != true ]; then
     load_config
@@ -145,6 +189,10 @@ if is_initialized && [ "$FORCE" != true ]; then
     echo "  Fingerprint: ${AMP_FINGERPRINT}"
     echo ""
     echo "Use --force to reinitialize (will generate new keys)."
+    if [ "$REMEMBER" = true ]; then
+        echo ""
+        remember_name "${NAME:-${CLAUDE_AGENT_NAME:-$AMP_AGENT_NAME}}" || true
+    fi
     exit 0
 fi
 
@@ -415,18 +463,23 @@ if [ "$_DO_FRESH_REGISTRATION" = true ]; then
     PUBLIC_KEY_PEM=$(cat "${AMP_KEYS_DIR}/public.pem")
 
     # Build registration request
+    # Tell the provider which folder this agent works in, so a session there can be recognised as it.
+    # A broad folder ($HOME, /tmp) is left out: it would claim every session below it.
+    REG_WORKDIR="$PWD"
+    is_broad_dir "$REG_WORKDIR" && REG_WORKDIR=""
     REG_REQUEST=$(jq -n \
         --arg name "$NAME" \
         --arg tenant "$TENANT" \
         --arg publicKey "$PUBLIC_KEY_PEM" \
         --arg agentId "$AGENT_UUID" \
+        --arg workdir "$REG_WORKDIR" \
         '{
             name: $name,
             tenant: $tenant,
             public_key: $publicKey,
             key_algorithm: "Ed25519",
             agent_id: $agentId
-        }')
+        } + (if $workdir != "" then {metadata: {working_directory: $workdir}} else {} end)')
 
     # Try to register with local AI Maestro
     REG_RESPONSE=$(curl -s -w "\n%{http_code}" --connect-timeout 3 -X POST \
@@ -549,6 +602,14 @@ echo "  Keys:     ${AMP_KEYS_DIR}/"
 echo "  Config:   ${AMP_CONFIG}"
 echo "  Identity: ${IDENTITY_FILE}"
 echo ""
+if [ "$REMEMBER" = true ]; then
+    remember_name "$NAME" || true
+    echo ""
+elif [ "${CLAUDE_AGENT_NAME:-}" != "$NAME" ]; then
+    echo "Tip: so every Claude Code session started in this folder knows it is '${NAME}', run here:"
+    echo "  amp-init --name ${NAME} --remember"
+    echo ""
+fi
 echo "Quick commands:"
 echo "  amp-inbox.sh              # Check your inbox"
 echo "  amp-send.sh <to> \"Subj\" \"Msg\"  # Send a message"
