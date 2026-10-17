@@ -996,10 +996,93 @@ verify_signature() {
     echo -n "${signature}" | base64 -d > "$tmp_sig"
 
     # Note: Ed25519 keys require -rawin flag for raw message verification
-    if $OPENSSL_BIN pkeyutl -verify -pubin -inkey "${public_key_file}" -rawin -in "$tmp_msg" -sigfile "$tmp_sig" 2>/dev/null; then
+    if $OPENSSL_BIN pkeyutl -verify -pubin -inkey "${public_key_file}" -rawin -in "$tmp_msg" -sigfile "$tmp_sig" >/dev/null 2>&1; then
         return 0
     fi
     return 1
+}
+
+# =============================================================================
+# Reading a message: is the sender's signature good? (protocol 07-security)
+# =============================================================================
+
+# Path of the public key registered for a sender on THIS machine, or nothing.
+# A key counts only when the agent that owns it has exactly the sender's address:
+# a local agent that merely shares the first name does not vouch for it.
+amp_sender_key_file() {
+    local from="$1" name uuid cfg addr
+    name="${from%%@*}"
+    uuid=$(_index_lookup "$name" 2>/dev/null) || return 1
+    [ -n "$uuid" ] || return 1
+    cfg="${AMP_AGENTS_BASE}/${uuid}/config.json"
+    [ -f "$cfg" ] && [ -f "${AMP_AGENTS_BASE}/${uuid}/keys/public.pem" ] || return 1
+    addr=$(jq -r '.agent.address // .address // empty' "$cfg" 2>/dev/null)
+    [ "$(echo "$addr" | tr '[:upper:]' '[:lower:]')" = "$(echo "$from" | tr '[:upper:]' '[:lower:]')" ] || return 1
+    echo "${AMP_AGENTS_BASE}/${uuid}/keys/public.pem"
+}
+
+# Check the signature on a stored message (JSON text). Sets:
+#   AMP_VERIFY_STATE  VERIFIED | UNVERIFIED | BAD SIGNATURE
+#   AMP_VERIFY_NOTE   one short reason
+# VERIFIED means: signed with the key registered for the sender's address.
+# It does not say the person behind the agent meant it.
+amp_verify_message() {
+    local msg="$1" from to subject priority reply_to sig keyfile hash recorded method
+    AMP_VERIFY_STATE="UNVERIFIED"; AMP_VERIFY_NOTE=""
+    from=$(echo "$msg" | jq -r '.envelope.from // empty')
+    sig=$(echo "$msg" | jq -r '.envelope.signature // empty')
+    if [ -z "$sig" ]; then AMP_VERIFY_NOTE="the message carries no signature"; return 0; fi
+
+    # What the receiving server recorded when it checked the signature itself.
+    recorded=$(echo "$msg" | jq -r '.local.verification.state // empty')
+    method=$(echo "$msg" | jq -r '.local.verification.method // empty')
+
+    keyfile=""
+    # Mail forwarded by another host names the recipient by bare name, so the signed
+    # text cannot be rebuilt here; the server that received it checked it.
+    if [ "$method" != "mesh-forwarded" ]; then
+        keyfile=$(amp_sender_key_file "$from" 2>/dev/null) || keyfile=""
+    fi
+
+    if [ -z "$keyfile" ]; then
+        case "$recorded" in
+            verified) AMP_VERIFY_STATE="VERIFIED"; AMP_VERIFY_NOTE="checked by the AI Maestro server when it delivered the message" ;;
+            bad) AMP_VERIFY_STATE="BAD SIGNATURE"; AMP_VERIFY_NOTE="the server found the signature invalid" ;;
+            *) AMP_VERIFY_NOTE="no registered key for ${from} on this machine" ;;
+        esac
+        return 0
+    fi
+
+    to=$(echo "$msg" | jq -r '.envelope.to // empty')
+    subject=$(echo "$msg" | jq -r '.envelope.subject // empty')
+    priority=$(echo "$msg" | jq -r '.envelope.priority // "normal"')
+    reply_to=$(echo "$msg" | jq -r '.envelope.in_reply_to // empty')
+
+    # The payload as the sender signed it. Delivery adds an empty attachment list and,
+    # on the server path, a null context; it drops local attachment paths and adds a
+    # security note. Undo those, trying the payload with and without null fields.
+    local base_filter='.payload | del(.security)
+        | if has("attachments") then .attachments |= map(del(.local_path)) else . end
+        | if (.attachments // null) == [] then del(.attachments) else . end'
+    local variant
+    for variant in "$base_filter" "$base_filter | with_entries(select(.value != null))"; do
+        hash=$(echo "$msg" | jq -cS "$variant" | tr -d '\n' | $OPENSSL_BIN dgst -sha256 -binary | base64 | tr -d '\n')
+        if verify_signature "${from}|${to}|${subject}|${priority}|${reply_to}|${hash}" "$sig" "$keyfile"; then
+            AMP_VERIFY_STATE="VERIFIED"; AMP_VERIFY_NOTE="signed with the key registered for ${from}"
+            return 0
+        fi
+    done
+
+    # Wrapped (external) content no longer hashes to what was signed: try the hash
+    # recorded when it was written. The body is then not re-checked.
+    recorded=$(echo "$msg" | jq -r '.local.verification.payload_sha256 // empty')
+    if [ -n "$recorded" ] && verify_signature "${from}|${to}|${subject}|${priority}|${reply_to}|${recorded}" "$sig" "$keyfile"; then
+        AMP_VERIFY_STATE="VERIFIED"; AMP_VERIFY_NOTE="signed with the key registered for ${from} (body not re-checked: it was wrapped on delivery)"
+        return 0
+    fi
+    AMP_VERIFY_STATE="BAD SIGNATURE"
+    AMP_VERIFY_NOTE="the signature does not match the key registered for ${from}"
+    return 0
 }
 
 # =============================================================================

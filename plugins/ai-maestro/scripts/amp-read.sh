@@ -134,9 +134,19 @@ if [ "$BOX" = "inbox" ]; then
     record_last_read "$MESSAGE_ID" "$(echo "$MESSAGE" | jq -r '.envelope.from')" 2>/dev/null || true
 fi
 
+# Is the sender's signature good? (inbox only: a sent copy is your own)
+AMP_VERIFY_STATE=""; AMP_VERIFY_NOTE=""
+if [ "$BOX" = "inbox" ]; then
+    amp_verify_message "$MESSAGE" 2>/dev/null || true
+fi
+
 # JSON output
 if [ "$JSON_OUTPUT" = true ]; then
-    echo "$MESSAGE"
+    if [ -n "$AMP_VERIFY_STATE" ]; then
+        echo "$MESSAGE" | jq --arg s "$AMP_VERIFY_STATE" --arg n "$AMP_VERIFY_NOTE" '. + {verification: {state: $s, note: $n}}'
+    else
+        echo "$MESSAGE"
+    fi
     exit 0
 fi
 
@@ -171,6 +181,9 @@ echo "Subject:  ${subject}"
 echo "Date:     ${ts_display}"
 echo "Priority: ${priority} $(priority_indicator "$priority")"
 echo "Type:     ${msg_type}"
+if [ -n "$AMP_VERIFY_STATE" ]; then
+    echo "Signature: ${AMP_VERIFY_STATE} (${AMP_VERIFY_NOTE})"
+fi
 
 if [ -n "$in_reply_to" ]; then
     echo "Reply to: ${in_reply_to}"
