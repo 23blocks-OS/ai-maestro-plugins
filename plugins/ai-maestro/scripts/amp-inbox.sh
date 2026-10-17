@@ -189,6 +189,13 @@ while read -r msg_b64; do
 
     echo "${status_icon} ${priority_icon} [${id}]"
     echo "   From: ${from}"
+    # Which of the agent's addresses it was sent to, when that is not the main one
+    # (an agent registered in several tenants has one address in each).
+    to_addr=$(echo "$msg" | jq -r '.envelope.to // empty')
+    if [ -n "$to_addr" ] && [[ "$to_addr" == *@* ]] && [ -n "${AMP_ADDRESS:-}" ] && \
+       [ "$(echo "$to_addr" | tr '[:upper:]' '[:lower:]')" != "$(echo "$AMP_ADDRESS" | tr '[:upper:]' '[:lower:]')" ]; then
+        echo "   To: ${to_addr}"
+    fi
     echo "   Subject: ${subject}${att_indicator}"
     echo "   Date: ${ts_display} | Type: ${msg_type}"
     amp_verify_message "$msg" 2>/dev/null || true
