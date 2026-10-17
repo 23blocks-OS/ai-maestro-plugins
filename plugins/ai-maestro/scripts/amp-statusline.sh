@@ -143,6 +143,8 @@ INDEX_FILE="${AGENTS_BASE}/.index.json"
 AGENT_UUID=""
 AGENT_NAME=""
 AGENT_ADDRESS=""
+AGENT_ADDRESS_SHOWN=""
+EXTRA_IDS=0
 UNREAD=0
 
 # Priority 1: Explicit agent ID
@@ -248,6 +250,17 @@ if [ -n "$AGENT_UUID" ]; then
         AGENT_ADDRESS=$(jq -r '.agent.address // empty' "$CONFIG_FILE" 2>/dev/null)
     fi
 
+    # An agent has one address per tenant it registered in (the local network, Crabmail,
+    # ...). Show how many others there are: their mail lands in the same inbox below.
+    REG_DIR="${AGENTS_BASE}/${AGENT_UUID}/registrations"
+    if [ -n "$AGENT_ADDRESS" ] && [ -d "$REG_DIR" ]; then
+        EXTRA_IDS=$(find "$REG_DIR" -name '*.json' -type f -print0 2>/dev/null | \
+            xargs -0 jq -r '.address // empty' 2>/dev/null | \
+            awk -v me="$(printf '%s' "$AGENT_ADDRESS" | tr 'A-Z' 'a-z')" 'NF { a=tolower($0); if (a != me && !(a in seen)) { seen[a]=1; n++ } } END { print n+0 }')
+        case "$EXTRA_IDS" in ''|*[!0-9]*) EXTRA_IDS=0 ;; esac
+        [ "$EXTRA_IDS" -gt 0 ] && AGENT_ADDRESS_SHOWN="${AGENT_ADDRESS} +${EXTRA_IDS}"
+    fi
+
     INBOX_DIR="${AGENTS_BASE}/${AGENT_UUID}/messages/inbox"
     if [ -d "$INBOX_DIR" ]; then
         # One jq process for the whole inbox (a few if the file list is huge).
@@ -336,15 +349,16 @@ if [ -n "$AGENT_ADDRESS" ]; then
     case "$COLS" in ''|*[!0-9]*) COLS=0 ;; esac
     SUFFIX_LEN=$(( $(_len " | ${UNREAD_PLAIN}") ))
 
-    ROW1=$(_join "$AGENT_NAME" "$AGENT_ADDRESS" "$FOLDER")
+    ADDR_SHOWN="${AGENT_ADDRESS_SHOWN:-$AGENT_ADDRESS}"
+    ROW1=$(_join "$AGENT_NAME" "$ADDR_SHOWN" "$FOLDER")
     if [ "$COLS" -gt 0 ] && [ $(( $(_len "$ROW1") + SUFFIX_LEN )) -gt "$COLS" ]; then
-        ROW1=$(_join "$AGENT_NAME" "$AGENT_ADDRESS" "$(_short_folder "$FOLDER")")
+        ROW1=$(_join "$AGENT_NAME" "$ADDR_SHOWN" "$(_short_folder "$FOLDER")")
     fi
     if [ "$COLS" -gt 0 ] && [ $(( $(_len "$ROW1") + SUFFIX_LEN )) -gt "$COLS" ]; then
-        ROW1=$(_join "$AGENT_NAME" "$AGENT_ADDRESS")
+        ROW1=$(_join "$AGENT_NAME" "$ADDR_SHOWN")
     fi
     if [ "$COLS" -gt 0 ] && [ $(( $(_len "$ROW1") + SUFFIX_LEN )) -gt "$COLS" ]; then
-        ROW1="$AGENT_ADDRESS"
+        ROW1="$ADDR_SHOWN"
     fi
     AMP_PART="${ROW1} | ${UNREAD_PART}"
 elif [ -z "$AGENT_UUID" ] && [ -z "$AGENT_NAME" ]; then
