@@ -191,6 +191,8 @@ while read -r msg_b64; do
     echo "   From: ${from}"
     echo "   Subject: ${subject}${att_indicator}"
     echo "   Date: ${ts_display} | Type: ${msg_type}"
+    amp_verify_message "$msg" 2>/dev/null || true
+    echo "   Signature: ${AMP_VERIFY_STATE:-UNVERIFIED}"
     echo ""
 done < <(echo "$MESSAGES" | jq -r '.[] | @base64')
 
