@@ -416,10 +416,10 @@ HELP
 
     # Validate model format if provided
     if [[ -n "$model" ]]; then
-        # Expected: sonnet, opus, haiku, or claude-{family}-{version}
-        if [[ ! "$model" =~ ^(claude-)?(sonnet|opus|haiku)(-[0-9]+(-[0-9]+)?(-[0-9]{8})?)?$ ]]; then
+        # Expected: an alias (sonnet, opus, haiku, fable, ...) or claude-{family}-{version}
+        if [[ ! "$model" =~ ^(claude-)?([a-z]+)(-[0-9]+(-[0-9]+)?(-[0-9]{8})?)?$ ]]; then
             print_error "Invalid model format: $model"
-            print_error "Expected format: sonnet, opus, haiku, or claude-{family}-{version}"
+            print_error "Expected format: a model alias (sonnet, opus, haiku, fable, ...) or claude-{family}-{version}"
             print_error "Examples: sonnet, claude-sonnet-4-5, claude-opus-4-5-20250929"
             return 1
         fi
@@ -673,9 +673,9 @@ HELP
 
     # Validate model format if provided
     if [[ -n "$model" ]]; then
-        if [[ ! "$model" =~ ^(claude-)?(sonnet|opus|haiku)(-[0-9]+(-[0-9]+)?(-[0-9]{8})?)?$ ]]; then
+        if [[ ! "$model" =~ ^(claude-)?([a-z]+)(-[0-9]+(-[0-9]+)?(-[0-9]{8})?)?$ ]]; then
             print_error "Invalid model format: $model"
-            print_error "Expected format: sonnet, opus, haiku, or claude-{family}-{version}"
+            print_error "Expected format: a model alias (sonnet, opus, haiku, fable, ...) or claude-{family}-{version}"
             return 1
         fi
     fi
