@@ -23,7 +23,7 @@ usage() {
 Usage: aimaestro-task.sh [--agent <id>] [--team <teamId>] <command> ...
 
 Commands:
-  add "<subject>" [--desc "<text>"] [--blocked-by <id>]...   Add a card (starts as To Do)
+  add "<subject>" [--desc "<text>"] [--blocked-by <id>]... [--team <teamId>]   Add a card (starts as To Do)
   start <id>                                                  Move to In Progress
   review <id>                                                 Move to Review
   done <id>                                                   Move to Done
@@ -115,6 +115,7 @@ case "$CMD" in
       case "$1" in
         --desc) [ $# -ge 2 ] || die "--desc needs a value"; desc="$2"; shift 2 ;;
         --blocked-by) [ $# -ge 2 ] || die "--blocked-by needs a value"; deps+=("$2"); shift 2 ;;
+        --team) [ $# -ge 2 ] || die "--team needs a value"; TEAM="$2"; shift 2 ;;
         *) die "Unknown option for add: $1" ;;
       esac
     done
