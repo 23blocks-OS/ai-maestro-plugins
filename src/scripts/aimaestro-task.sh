@@ -23,17 +23,19 @@ usage() {
 Usage: aimaestro-task.sh [--agent <id>] [--team <teamId>] <command> ...
 
 Commands:
-  add "<subject>" [--desc "<text>"] [--blocked-by <id>]... [--team <teamId>]   Add a card (starts as To Do)
+  add "<subject>" [--desc "<text>"] [--blocked-by <id>]... [--team <teamId>] [--quadrant q1|q2|q3|q4]   Add a card (starts as To Do)
   start <id>                                                  Move to In Progress
   review <id>                                                 Move to Review
   done <id>                                                   Move to Done
   move <id> <status>                                          backlog | pending | in_progress | review | completed
   wait <id> --on juan|outside|hold|<agent-id> [--note "<text>"]   Waiting, and on whom
   comment <id> "<text>"                                       Write on the card (stored and shown; never sent to anyone)
-  list [--mine] [--waiting-on <who>] [--status <status>]      Your board (own cards + team cards assigned to you)
+  place <id> q1|q2|q3|q4|none                                 Put a card on the Eisenhower matrix (none = take it off)
+  list [--mine] [--waiting-on <who>] [--status <status>] [--quadrant q1|q2|q3|q4|unplaced]   Your board (own cards + team cards assigned to you)
   show <id>                                                   One card with its comments
 
 <id> is the full id or the first characters shown in "[TASK d773ef06]" (it must be unique).
+Quadrants: q1 urgent+important (do first), q2 important only (schedule), q3 urgent only (delegate), q4 neither (delete).
 Your agent id comes from AIM_AGENT_ID (set in your session); --agent overrides it.
 An operator's instruction on a card arrives in your prompt as "[TASK <id>] ... instruction from the operator".
 Answer it with: aimaestro-task.sh comment <id> "<what you did or need>".
@@ -102,6 +104,18 @@ update() { # scope team id json
   call "$method" "$(card_path "$1" "$2" "$3")" "$4" >/dev/null || exit 1
 }
 
+# q1..q4 -> {"urgent":..,"important":..}; none -> nulls (a card not placed). Anything else is refused.
+quadrant_json() {
+  case "$1" in
+    q1) echo '{"urgent":true,"important":true}' ;;
+    q2) echo '{"urgent":false,"important":true}' ;;
+    q3) echo '{"urgent":true,"important":false}' ;;
+    q4) echo '{"urgent":false,"important":false}' ;;
+    none) echo '{"urgent":null,"important":null}' ;;
+    *) die "Unknown quadrant '$1' (q1, q2, q3, q4, or none)" ;;
+  esac
+}
+
 is_status() { case " $STATUS_LIST " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
 short() { printf '%s' "$1" | cut -c1-8; }
@@ -110,16 +124,21 @@ short() { printf '%s' "$1" | cut -c1-8; }
 case "$CMD" in
   add)
     subject="${1:-}"; [ -n "$subject" ] || die 'add needs a subject: add "<subject>"'; shift
-    desc=""; deps=()
+    desc=""; deps=(); quadrant=""
     while [ $# -gt 0 ]; do
       case "$1" in
         --desc) [ $# -ge 2 ] || die "--desc needs a value"; desc="$2"; shift 2 ;;
         --blocked-by) [ $# -ge 2 ] || die "--blocked-by needs a value"; deps+=("$2"); shift 2 ;;
         --team) [ $# -ge 2 ] || die "--team needs a value"; TEAM="$2"; shift 2 ;;
+        --quadrant) [ $# -ge 2 ] || die "--quadrant needs a value"; quadrant="$2"; shift 2 ;;
         *) die "Unknown option for add: $1" ;;
       esac
     done
     json=$(jq -n --arg s "$subject" --arg d "$desc" '{subject:$s} + (if $d != "" then {description:$d} else {} end)')
+    if [ -n "$quadrant" ]; then
+      q=$(quadrant_json "$quadrant") || exit 1
+      json=$(printf '%s' "$json" | jq --argjson q "$q" '. + $q')
+    fi
     if [ "${#deps[@]}" -gt 0 ]; then
       # blocked-by ids may be short; resolve each
       ids=()
@@ -182,22 +201,34 @@ case "$CMD" in
     echo "Commented on $(short "$full")"
     ;;
 
+  place)
+    id="${1:-}"; q="${2:-}"
+    [ -n "$q" ] || die "place needs a quadrant: place <id> q1|q2|q3|q4|none"
+    body=$(quadrant_json "$q") || exit 1
+    resolved=$(resolve "$id") || exit 1
+    IFS='|' read -r scope team full <<< "$resolved"
+    update "$scope" "$team" "$full" "$body"
+    echo "$(short "$full")  ->  $q"
+    ;;
+
   list)
-    waiting_on=""; status=""
+    waiting_on=""; status=""; quadrant=""
     while [ $# -gt 0 ]; do
       case "$1" in
         --mine) shift ;;
+        --quadrant) [ $# -ge 2 ] || die "--quadrant needs a value"; quadrant="$2"; shift 2 ;;
         --waiting-on) [ $# -ge 2 ] || die "--waiting-on needs a value"; waiting_on="$2"; shift 2 ;;
         --status) [ $# -ge 2 ] || die "--status needs a value"; status="$2"; shift 2 ;;
         *) die "Unknown option for list: $1" ;;
       esac
     done
     b=$(board) || exit 1
-    printf '%s' "$b" | jq -r --arg w "$waiting_on" --arg s "$status" '
+    case "$quadrant" in ""|q1|q2|q3|q4|unplaced) ;; *) die "Unknown quadrant '$quadrant' (q1, q2, q3, q4 or unplaced)" ;; esac
+    printf '%s' "$b" | jq -r --arg w "$waiting_on" --arg s "$status" --arg q "$quadrant" '
       .cards
-      | map(select(($w == "" or (.status == "waiting" and .waitingOn == $w)) and ($s == "" or .status == $s)))
+      | map(select(($w == "" or (.status == "waiting" and .waitingOn == $w)) and ($s == "" or .status == $s) and ($q == "" or ($q == "unplaced" and (.quadrant == null)) or .quadrant == $q)))
       | if length == 0 then "No cards." else
-          .[] | "\(.id[0:8])  \(.status | . + (" " * (11 - length)))  \(.subject)"
+          .[] | "\(.id[0:8])  \(.status | . + (" " * (11 - length)))  \(if .quadrant then (.quadrant | ascii_upcase) else "--" end)  \(.subject)"
             + (if .status == "waiting" then "  [waiting on \(.waitingOn)\(if .waitingNote then ": " + .waitingNote else "" end)]" else "" end)
             + (if .scope == "team" then "  (team: \(.teamName // .teamId))" else "" end)
             + (if (.comments // [] | length) > 0 then "  (\(.comments | length) comments)" else "" end)
@@ -212,6 +243,7 @@ case "$CMD" in
     printf '%s' "$b" | jq -r --arg id "$full" '
       .cards[] | select(.id == $id)
       | "\(.id)\nSubject:  \(.subject)\nStatus:   \(.status)" + (if .status == "waiting" then " (on \(.waitingOn)\(if .waitingNote then ": " + .waitingNote else "" end))" else "" end)
+        + "\nQuadrant: \(if .quadrant then (.quadrant | ascii_upcase) else "not placed" end)"
         + "\nBoard:    \(.scope)" + (if .scope == "team" then " (\(.teamName // .teamId))" else "" end)
         + (if .description then "\n\n\(.description)" else "" end)
         + (if (.comments // [] | length) > 0 then "\n\nComments:\n" + ([.comments[] | "  [\(.createdAt[0:16])] \(.author.kind)\(if .author.id then " " + .author.id[0:8] else "" end): \(.text)"] | join("\n")) else "" end)'
