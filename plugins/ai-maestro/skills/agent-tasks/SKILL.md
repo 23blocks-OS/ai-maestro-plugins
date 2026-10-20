@@ -1,11 +1,11 @@
 ---
 name: agent-tasks
-description: "Keep your own task board in AI Maestro current, so the operator can see what you are doing, where each task is and what you are waiting for. Use when you take on, start, finish, hand over, pause or block on a task; when you need to wait for the operator, another agent or someone outside; and when a prompt starts with [TASK <id>], which is an instruction written on one of your cards."
+description: "Keep your own task board in AI Maestro current, so the operator can see what you are doing, where each task is and what you are waiting for. Use when you take on, start, finish, hand over, pause or block on a task; when you need to wait for the operator, another agent or someone outside; when a card's urgency or importance changes (the operator's Eisenhower matrix), and when a prompt starts with [TASK <id>], which is an instruction written on one of your cards."
 allowed-tools: Bash
 compatibility: Requires AI Maestro (aimaestro.dev) with Bash shell access
 metadata:
   author: 23blocks
-  version: 1.0.0
+  version: 1.1.0
 ---
 
 # Agent tasks
@@ -19,7 +19,8 @@ aimaestro-task.sh review <id>                                     # it is waitin
 aimaestro-task.sh done <id>                                       # finished
 aimaestro-task.sh wait <id> --on juan --note "needs the final copy"
 aimaestro-task.sh comment <id> "what you did, or what you need"
-aimaestro-task.sh list                                            # your board
+aimaestro-task.sh place <id> q1                                   # q1 do first, q2 schedule, q3 delegate, q4 delete (none: take it off)
+aimaestro-task.sh list                                            # your board (--quadrant q1 shows one square)
 aimaestro-task.sh show <id>                                       # one card with its comments
 ```
 
@@ -31,6 +32,10 @@ aimaestro-task.sh show <id>                                       # one card wit
 - You stop because you need something: `wait` and say on whom: `juan` (the operator), `outside` (someone not on AI Maestro), `hold` (paused on purpose, nobody is blocking it), or another agent's id. Say what exactly in `--note`; it is the first thing the operator reads. `start` again when the wait is over.
 - The work is done and someone should look: `review`. Done and nothing more to do: `done`.
 - Use `comment` for context about a task instead of sending a new message about it. Your comments stay on the card and are shown; they are not sent to anyone's prompt.
+
+## The matrix
+
+The operator also sees every card on an Eisenhower matrix: q1 urgent and important (do first), q2 important, not urgent (schedule), q3 urgent, not important (delegate), q4 neither (delete). Place a card when you add it (`add "..." --quadrant q1`, or `place <id> q2` later) and move it when the deadline or the owner changes. A card you did not place sits in "Not placed", which is not the same as q4.
 
 One card per task you are working on. Do not make cards for every small step.
 
