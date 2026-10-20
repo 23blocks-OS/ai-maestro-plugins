@@ -24,7 +24,8 @@ declare -a _TEMP_FILES=()
 cleanup() {
     # Clean up any temporary files created during execution
     local f
-    for f in "${_TEMP_FILES[@]}"; do
+    # ${arr[@]+...}: an empty array under set -u is an error in bash 3.2 (macOS /bin/bash)
+    for f in ${_TEMP_FILES[@]+"${_TEMP_FILES[@]}"}; do
         [[ -f "$f" ]] && rm -f "$f" 2>/dev/null || true
     done
     # Reset terminal colors in case of abnormal exit
