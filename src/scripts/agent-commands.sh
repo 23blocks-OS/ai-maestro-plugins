@@ -630,6 +630,7 @@ HELP
 
 cmd_update() {
     local agent="" task="" tags="" add_tag="" remove_tag="" model="" args=""
+    local nl=$'\n'
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -644,10 +645,10 @@ cmd_update() {
                 tags="$2"; shift 2 ;;
             --add-tag)
                 [[ $# -lt 2 ]] && { print_error "--add-tag requires a value"; return 1; }
-                add_tag="$2"; shift 2 ;;
+                add_tag="${add_tag}${add_tag:+$nl}$2"; shift 2 ;;   # repeatable: one tag per line
             --remove-tag)
                 [[ $# -lt 2 ]] && { print_error "--remove-tag requires a value"; return 1; }
-                remove_tag="$2"; shift 2 ;;
+                remove_tag="${remove_tag}${remove_tag:+$nl}$2"; shift 2 ;;
             --args)
                 [[ $# -lt 2 ]] && { print_error "--args requires a value"; return 1; }
                 args="$2"; shift 2 ;;
@@ -660,8 +661,8 @@ Options:
   -m, --model <model>    Update AI model
   --args <arguments>     Update program arguments (e.g. "--continue --chrome")
   --tags <t1,t2>         Replace all tags
-  --add-tag <tag>        Add a single tag
-  --remove-tag <tag>     Remove a single tag
+  --add-tag <tag>        Add a tag (repeat the flag to add several)
+  --remove-tag <tag>     Remove a tag (repeat the flag to remove several)
 HELP
                 return 0 ;;
             -*) print_error "Unknown option: $1"; return 1 ;;
@@ -696,10 +697,10 @@ HELP
         current_tags=$(get_agent_data "$RESOLVED_AGENT_ID" | jq -r '.agent.tags // []')
 
         if [[ -n "$add_tag" ]]; then
-            current_tags=$(echo "$current_tags" | jq --arg t "$add_tag" '. + [$t] | unique')
+            current_tags=$(echo "$current_tags" | jq --arg t "$add_tag" '. + ($t | split("\n")) | unique')
         fi
         if [[ -n "$remove_tag" ]]; then
-            current_tags=$(echo "$current_tags" | jq --arg t "$remove_tag" 'map(select(. != $t))')
+            current_tags=$(echo "$current_tags" | jq --arg t "$remove_tag" '($t | split("\n")) as $drop | map(select(. as $x | $drop | index($x) | not))')
         fi
 
         payload=$(echo "$payload" | jq --argjson tags "$current_tags" '. + {tags: $tags}')
