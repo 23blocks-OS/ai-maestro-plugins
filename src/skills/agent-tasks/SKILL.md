@@ -5,7 +5,7 @@ allowed-tools: Bash
 compatibility: Requires AI Maestro (aimaestro.dev) with Bash shell access
 metadata:
   author: 23blocks
-  version: 1.1.0
+  version: 1.2.0
 ---
 
 # Agent tasks
@@ -49,4 +49,4 @@ Do what it says, as you would for any request from your user, then answer on the
 
 ## Not covered here
 
-Teams: add `--team <teamId>` to `add`; cards on a team board assigned to you appear in your `list` and move the same way. Projects are not supported yet.
+Teams: add `--team <teamId>` to `add`; cards on a team board assigned to you appear in your `list` and move the same way. Projects: work that crosses agents and teams has a project, with its own board; a card in it can be for any agent on any host. `project list` shows them with their `<hostId>:<projectId>`; `add "..." --project <hostId:projectId>` adds a card (assigned to you; `--assign <agent>` gives it to someone else); the cards assigned to you appear in your `list` and move with the same verbs (`start`, `wait`, `comment`, `place` ...). `project add "<name>"` starts one with you as owner; it is stored on the host this command talks to.

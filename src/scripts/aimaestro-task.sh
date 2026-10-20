@@ -24,6 +24,7 @@ Usage: aimaestro-task.sh [--agent <id>] [--team <teamId>] <command> ...
 
 Commands:
   add "<subject>" [--desc "<text>"] [--blocked-by <id>]... [--team <teamId>] [--quadrant q1|q2|q3|q4]   Add a card (starts as To Do)
+  add "<subject>" --project <hostId:projectId> [--assign <agent id or name>] ...                  Add a card to a project (assigned to you unless --assign)
   start <id>                                                  Move to In Progress
   review <id>                                                 Move to Review
   done <id>                                                   Move to Done
@@ -31,7 +32,11 @@ Commands:
   wait <id> --on juan|outside|hold|<agent-id> [--note "<text>"]   Waiting, and on whom
   comment <id> "<text>"                                       Write on the card (stored and shown; never sent to anyone)
   place <id> q1|q2|q3|q4|none                                 Put a card on the Eisenhower matrix (none = take it off)
-  list [--mine] [--waiting-on <who>] [--status <status>] [--quadrant q1|q2|q3|q4|unplaced]   Your board (own cards + team cards assigned to you)
+  list [--mine] [--waiting-on <who>] [--status <status>] [--quadrant q1|q2|q3|q4|unplaced]   Your board (own, team and project cards assigned to you)
+  list --project <hostId:projectId>                           Every card of one project, whoever it is for
+  project add "<name>" [--owner <agent>] [--desc "<text>"]    Start a project (stored on the owner's host: the one this command talks to)
+  project list                                                Projects on every host you can reach, with their <hostId:projectId>
+  project show <hostId:projectId>                             One project with its cards
   show <id>                                                   One card with its comments
 
 <id> is the full id or the first characters shown in "[TASK d773ef06]" (it must be unique).
@@ -63,11 +68,13 @@ shift
 # ---- HTTP ----
 # call METHOD PATH [json-body]  -> prints the body; fails with the server's message on a non-2xx answer
 call() {
-  local method="$1" path="$2" body="${3:-}" out code
+  local method="$1" path="$2" body="${3:-}" out code url
+  # A path starting with http is already a full address (a project card lives on its project's host)
+  case "$path" in http*) url="$path" ;; *) url="${API}${path}" ;; esac
   if [ -n "$body" ]; then
-    out=$(curl -sS --max-time 15 -X "$method" -H 'Content-Type: application/json' -d "$body" -w '\n%{http_code}' "${API}${path}" 2>&1) || die "Could not reach AI Maestro at ${API}: ${out}"
+    out=$(curl -sS --max-time 15 -X "$method" -H 'Content-Type: application/json' -d "$body" -w '\n%{http_code}' "$url" 2>&1) || die "Could not reach AI Maestro at ${url%%/api/*}: ${out}"
   else
-    out=$(curl -sS --max-time 15 -X "$method" -w '\n%{http_code}' "${API}${path}" 2>&1) || die "Could not reach AI Maestro at ${API}: ${out}"
+    out=$(curl -sS --max-time 15 -X "$method" -w '\n%{http_code}' "$url" 2>&1) || die "Could not reach AI Maestro at ${url%%/api/*}: ${out}"
   fi
   code="${out##*$'\n'}"
   out="${out%$'\n'*}"
@@ -79,13 +86,75 @@ call() {
 
 board() { call GET "/api/agents/${AGENT}/board"; }
 
-# Find a card on the board by full id or unique prefix; prints "<scope>|<teamId or ->|<id>"
+# ---- hosts and projects ----
+# The mesh: "<hostId>|<base address>" per enabled host, this one first. Best effort: no host list means this host only.
+HOSTS_CACHE=""
+hosts_lines() {
+  if [ -z "$HOSTS_CACHE" ]; then
+    local h
+    h=$(curl -sS --max-time 5 "${API}/api/hosts" 2>/dev/null | jq -r --arg api "$API" '.hosts[]? | select(.enabled != false) | [.id, (if .isSelf then $api else .url end)] | join("|")' 2>/dev/null || true)
+    HOSTS_CACHE="${h:-self|$API}"
+  fi
+  printf '%s\n' "$HOSTS_CACHE"
+}
+
+# GET without dying: a host that is down or has no such route adds nothing
+peer_get() { curl -sS -f --max-time 4 "$1" 2>/dev/null || true; }
+
+# Every project card assigned to me, from every host's projects: a JSON array, each card tagged with its host
+project_cards() {
+  local out="[]" line base body
+  while IFS='|' read -r _ base; do
+    [ -n "$base" ] || continue
+    body=$(peer_get "${base%/}/api/projects?assignee=${AGENT}")
+    [ -n "$body" ] || continue
+    out=$(printf '%s' "$out" | jq --argjson b "$body" --arg base "${base%/}" '. + [ ($b.projects // [])[] | .cards[]? | . + {hostBase: $base} ]' 2>/dev/null || printf '%s' "$out")
+  done < <(hosts_lines)
+  printf '%s' "$out"
+}
+
+# A project by "<hostId>:<projectId>" or a unique start of the project id: prints "<base>|<projectId>|<name>"
+find_project() {
+  local ref="$1" hostpart="" idpart="$1" line hid base body match="" n=0
+  case "$ref" in *:*) hostpart="${ref%%:*}"; idpart="${ref#*:}" ;; esac
+  [ -n "$idpart" ] || die "A project is needed: <hostId>:<projectId> (see: project list)"
+  while IFS='|' read -r hid base; do
+    [ -n "$base" ] || continue
+    [ -z "$hostpart" ] || [ "$hostpart" = "$hid" ] || continue
+    body=$(peer_get "${base%/}/api/projects")
+    [ -n "$body" ] || continue
+    while IFS= read -r row; do
+      [ -n "$row" ] || continue
+      match="${base%/}|${row}"; n=$((n + 1))
+    done < <(printf '%s' "$body" | jq -r --arg w "$idpart" '.projects[]? | select(.id | startswith($w)) | [.id, .name] | join("|")')
+  done < <(hosts_lines)
+  [ "$n" -ge 1 ] || die "No project starts with '$idpart' on the hosts I can reach"
+  [ "$n" -eq 1 ] || die "More than one project starts with '$idpart'; use <hostId>:<projectId> or more characters"
+  printf '%s' "$match"
+}
+
+# An agent id from an id or a name this host knows; an unknown name is passed through as given
+agent_id_of() {
+  local who="$1" id
+  case "$who" in
+    *-*-*-*-*) printf '%s' "$who"; return ;;
+  esac
+  id=$(peer_get "${API}/api/agents" | jq -r --arg n "$who" '[.agents[]? | select(.id == $n or .name == $n or .alias == $n)][0].id // empty' 2>/dev/null || true)
+  printf '%s' "${id:-$who}"
+}
+
+# Find a card on my board (own, team and project cards) by full id or unique prefix;
+# prints "<scope>|<teamId or ->|<id>|<host address or ->|<projectId or ->"
 # ("|" and not a tab: read collapses empty tab-separated fields)
 resolve() {
-  local want="$1" b matches n
+  local want="$1" b pc matches n
   [ -n "$want" ] || die "A card id is needed"
   b=$(board) || exit 1
-  matches=$(printf '%s' "$b" | jq -r --arg w "$want" '.cards[] | select(.id | startswith($w)) | [.scope, (.teamId // "-"), .id] | join("|")')
+  pc=$(project_cards)
+  matches=$(
+    printf '%s' "$b" | jq -r --arg w "$want" '.cards[] | select(.id | startswith($w)) | [.scope, (.teamId // "-"), .id, "-", "-"] | join("|")'
+    printf '%s' "$pc" | jq -r --arg w "$want" '.[] | select(.id | startswith($w)) | ["project", "-", .id, .hostBase, .projectId] | join("|")'
+  )
   n=$(printf '%s' "$matches" | /usr/bin/grep -c . || true)
   [ "$n" -ge 1 ] || die "No card on your board starts with '$want'"
   [ "$n" -eq 1 ] || die "More than one card starts with '$want'; use more characters"
@@ -93,15 +162,19 @@ resolve() {
 }
 
 # Base API path of a resolved card
-card_path() {
-  local scope="$1" team="$2" id="$3"
-  if [ "$scope" = "team" ]; then printf '/api/teams/%s/tasks/%s' "$team" "$id"; else printf '/api/agents/%s/tasks/%s' "$AGENT" "$id"; fi
+card_path() { # scope team id hostBase projectId
+  local scope="$1" team="$2" id="$3" hb="${4:--}" pid="${5:--}"
+  case "$scope" in
+    project) printf '%s/api/projects/%s/tasks/%s' "$hb" "$pid" "$id" ;;
+    team) printf '/api/teams/%s/tasks/%s' "$team" "$id" ;;
+    *) printf '/api/agents/%s/tasks/%s' "$AGENT" "$id" ;;
+  esac
 }
 
-update() { # scope team id json
+update() { # scope team id hostBase projectId json
   local method=PATCH
-  [ "$1" = "team" ] && method=PUT
-  call "$method" "$(card_path "$1" "$2" "$3")" "$4" >/dev/null || exit 1
+  case "$1" in team|project) method=PUT ;; esac
+  call "$method" "$(card_path "$1" "$2" "$3" "$4" "$5")" "$6" >/dev/null || exit 1
 }
 
 # q1..q4 -> {"urgent":..,"important":..}; none -> nulls (a card not placed). Anything else is refused.
@@ -124,9 +197,11 @@ short() { printf '%s' "$1" | cut -c1-8; }
 case "$CMD" in
   add)
     subject="${1:-}"; [ -n "$subject" ] || die 'add needs a subject: add "<subject>"'; shift
-    desc=""; deps=(); quadrant=""
+    desc=""; deps=(); quadrant=""; project=""; assign=""
     while [ $# -gt 0 ]; do
       case "$1" in
+        --project) [ $# -ge 2 ] || die "--project needs a value"; project="$2"; shift 2 ;;
+        --assign) [ $# -ge 2 ] || die "--assign needs a value"; assign="$2"; shift 2 ;;
         --desc) [ $# -ge 2 ] || die "--desc needs a value"; desc="$2"; shift 2 ;;
         --blocked-by) [ $# -ge 2 ] || die "--blocked-by needs a value"; deps+=("$2"); shift 2 ;;
         --team) [ $# -ge 2 ] || die "--team needs a value"; TEAM="$2"; shift 2 ;;
@@ -148,7 +223,17 @@ case "$CMD" in
       done
       json=$(printf '%s' "$json" | jq --argjson ids "$(printf '%s\n' "${ids[@]}" | jq -R . | jq -s .)" '. + {blockedBy:$ids}')
     fi
-    if [ -n "$TEAM" ]; then
+    if [ -n "$project" ]; then
+      [ -z "$TEAM" ] || die "A card goes on a team board or a project board, not both"
+      proj=$(find_project "$project") || exit 1
+      IFS='|' read -r pbase ppid pname <<< "$proj"
+      who=$(agent_id_of "${assign:-$AGENT}")
+      json=$(printf '%s' "$json" | jq --arg a "$who" '. + {assigneeAgentId:$a}')
+      res=$(call POST "${pbase}/api/projects/${ppid}/tasks" "$json") || exit 1
+      id=$(printf '%s' "$res" | jq -r '.task.id')
+      echo "Added $(short "$id")  $subject  (project: $pname)"
+      exit 0
+    elif [ -n "$TEAM" ]; then
       json=$(printf '%s' "$json" | jq --arg a "$AGENT" '. + {assigneeAgentId:$a}')
       res=$(call POST "/api/teams/${TEAM}/tasks" "$json") || exit 1
     else
@@ -169,8 +254,8 @@ case "$CMD" in
     [ "$status" != "waiting" ] || die "Use: wait <id> --on juan|outside|hold|<agent-id>"
     is_status "$status" || die "Unknown status '$status' (backlog, pending, in_progress, review, completed)"
     resolved=$(resolve "$id") || exit 1
-    IFS='|' read -r scope team full <<< "$resolved"
-    update "$scope" "$team" "$full" "$(jq -n --arg s "$status" '{status:$s}')"
+    IFS='|' read -r scope team full hb pid <<< "$resolved"
+    update "$scope" "$team" "$full" "$hb" "$pid" "$(jq -n --arg s "$status" '{status:$s}')"
     echo "$(short "$full")  ->  $status"
     ;;
 
@@ -186,8 +271,8 @@ case "$CMD" in
     done
     [ -n "$on" ] || die "wait needs --on juan|outside|hold|<agent-id>"
     resolved=$(resolve "$id") || exit 1
-    IFS='|' read -r scope team full <<< "$resolved"
-    update "$scope" "$team" "$full" "$(jq -n --arg on "$on" --arg n "$note" '{status:"waiting", waitingOn:$on} + (if $n != "" then {waitingNote:$n} else {} end)')"
+    IFS='|' read -r scope team full hb pid <<< "$resolved"
+    update "$scope" "$team" "$full" "$hb" "$pid" "$(jq -n --arg on "$on" --arg n "$note" '{status:"waiting", waitingOn:$on} + (if $n != "" then {waitingNote:$n} else {} end)')"
     echo "$(short "$full")  ->  waiting on $on${note:+ ($note)}"
     ;;
 
@@ -195,9 +280,9 @@ case "$CMD" in
     id="${1:-}"; text="${2:-}"
     [ -n "$text" ] || die 'comment needs text: comment <id> "<text>"'
     resolved=$(resolve "$id") || exit 1
-    IFS='|' read -r scope team full <<< "$resolved"
+    IFS='|' read -r scope team full hb pid <<< "$resolved"
     # An agent comment is kept on the card and shown to people; it is never sent to anyone's prompt.
-    call POST "$(card_path "$scope" "$team" "$full")/comments" "$(jq -n --arg a "$AGENT" --arg t "$text" '{author:{kind:"agent", id:$a}, text:$t}')" >/dev/null || exit 1
+    call POST "$(card_path "$scope" "$team" "$full" "$hb" "$pid")/comments" "$(jq -n --arg a "$AGENT" --arg t "$text" '{author:{kind:"agent", id:$a}, text:$t}')" >/dev/null || exit 1
     echo "Commented on $(short "$full")"
     ;;
 
@@ -206,31 +291,46 @@ case "$CMD" in
     [ -n "$q" ] || die "place needs a quadrant: place <id> q1|q2|q3|q4|none"
     body=$(quadrant_json "$q") || exit 1
     resolved=$(resolve "$id") || exit 1
-    IFS='|' read -r scope team full <<< "$resolved"
-    update "$scope" "$team" "$full" "$body"
+    IFS='|' read -r scope team full hb pid <<< "$resolved"
+    update "$scope" "$team" "$full" "$hb" "$pid" "$body"
     echo "$(short "$full")  ->  $q"
     ;;
 
   list)
-    waiting_on=""; status=""; quadrant=""
+    waiting_on=""; status=""; quadrant=""; project=""
     while [ $# -gt 0 ]; do
       case "$1" in
         --mine) shift ;;
+        --project) [ $# -ge 2 ] || die "--project needs a value"; project="$2"; shift 2 ;;
         --quadrant) [ $# -ge 2 ] || die "--quadrant needs a value"; quadrant="$2"; shift 2 ;;
         --waiting-on) [ $# -ge 2 ] || die "--waiting-on needs a value"; waiting_on="$2"; shift 2 ;;
         --status) [ $# -ge 2 ] || die "--status needs a value"; status="$2"; shift 2 ;;
         *) die "Unknown option for list: $1" ;;
       esac
     done
-    b=$(board) || exit 1
     case "$quadrant" in ""|q1|q2|q3|q4|unplaced) ;; *) die "Unknown quadrant '$quadrant' (q1, q2, q3, q4 or unplaced)" ;; esac
-    printf '%s' "$b" | jq -r --arg w "$waiting_on" --arg s "$status" --arg q "$quadrant" '
+    showwho=""
+    if [ -n "$project" ]; then
+      # one whole project, whoever its cards are for
+      proj=$(find_project "$project") || exit 1
+      IFS='|' read -r pbase ppid pname <<< "$proj"
+      b=$(call GET "${pbase}/api/projects/${ppid}/tasks" | jq '{cards: .tasks}') || exit 1
+      echo "Project $pname"
+      showwho=1
+    else
+      b=$(board) || exit 1
+      pc=$(project_cards)
+      b=$(printf '%s' "$b" | jq --argjson p "$pc" '.cards += $p')
+    fi
+    printf '%s' "$b" | jq -r --arg w "$waiting_on" --arg s "$status" --arg q "$quadrant" --arg who "$showwho" '
       .cards
       | map(select(($w == "" or (.status == "waiting" and .waitingOn == $w)) and ($s == "" or .status == $s) and ($q == "" or ($q == "unplaced" and (.quadrant == null)) or .quadrant == $q)))
       | if length == 0 then "No cards." else
           .[] | "\(.id[0:8])  \(.status | . + (" " * (11 - length)))  \(if .quadrant then (.quadrant | ascii_upcase) else "--" end)  \(.subject)"
             + (if .status == "waiting" then "  [waiting on \(.waitingOn)\(if .waitingNote then ": " + .waitingNote else "" end)]" else "" end)
             + (if .scope == "team" then "  (team: \(.teamName // .teamId))" else "" end)
+            + (if .scope == "project" and $who == "" then "  (project: \(.projectName // .projectId))" else "" end)
+            + (if $who != "" then "  -> \(.assigneeName // (.assigneeAgentId // "nobody" | .[0:8]))" else "" end)
             + (if (.comments // [] | length) > 0 then "  (\(.comments | length) comments)" else "" end)
         end'
     ;;
@@ -238,15 +338,60 @@ case "$CMD" in
   show)
     id="${1:-}"
     resolved=$(resolve "$id") || exit 1
-    IFS='|' read -r scope team full <<< "$resolved"
+    IFS='|' read -r scope team full hb pid <<< "$resolved"
     b=$(board) || exit 1
+    pc=$(project_cards)
+    b=$(printf '%s' "$b" | jq --argjson p "$pc" '.cards += $p')
     printf '%s' "$b" | jq -r --arg id "$full" '
       .cards[] | select(.id == $id)
       | "\(.id)\nSubject:  \(.subject)\nStatus:   \(.status)" + (if .status == "waiting" then " (on \(.waitingOn)\(if .waitingNote then ": " + .waitingNote else "" end))" else "" end)
         + "\nQuadrant: \(if .quadrant then (.quadrant | ascii_upcase) else "not placed" end)"
-        + "\nBoard:    \(.scope)" + (if .scope == "team" then " (\(.teamName // .teamId))" else "" end)
+        + "\nBoard:    \(.scope)" + (if .scope == "team" then " (\(.teamName // .teamId))" elif .scope == "project" then " (\(.projectName // .projectId))" else "" end)
         + (if .description then "\n\n\(.description)" else "" end)
         + (if (.comments // [] | length) > 0 then "\n\nComments:\n" + ([.comments[] | "  [\(.createdAt[0:16])] \(.author.kind)\(if .author.id then " " + .author.id[0:8] else "" end): \(.text)"] | join("\n")) else "" end)'
+    ;;
+
+  project)
+    sub="${1:-}"; shift || true
+    case "$sub" in
+      add)
+        pname="${1:-}"; [ -n "$pname" ] || die 'project add needs a name: project add "<name>"'; shift
+        owner=""; desc=""
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            --owner) [ $# -ge 2 ] || die "--owner needs a value"; owner="$2"; shift 2 ;;
+            --desc) [ $# -ge 2 ] || die "--desc needs a value"; desc="$2"; shift 2 ;;
+            *) die "Unknown option for project add: $1" ;;
+          esac
+        done
+        who=$(agent_id_of "${owner:-$AGENT}")
+        json=$(jq -n --arg n "$pname" --arg d "$desc" --arg o "$who" '{name:$n, ownerAgentId:$o} + (if $d != "" then {description:$d} else {} end)')
+        res=$(call POST "/api/projects" "$json") || exit 1
+        # The reference other commands take: the host this project is stored on, and its id
+        hid=$(hosts_lines | /usr/bin/grep -F "|${API}" | head -1 | cut -d'|' -f1)
+        echo "Project ${hid:-$(printf '%s' "$res" | jq -r '.project.hostId')}:$(printf '%s' "$res" | jq -r '.project.id')  $pname"
+        ;;
+      list)
+        found=0
+        while IFS='|' read -r hid base; do
+          [ -n "$base" ] || continue
+          body=$(peer_get "${base%/}/api/projects")
+          [ -n "$body" ] || continue
+          rows=$(printf '%s' "$body" | jq -r --arg h "$hid" '.projects[]? | "\($h):\(.id[0:8])  \(.status | . + (" " * (6 - length)))  \(.name)  (\(.counts.open) open\(if .counts.waiting > 0 then ", \(.counts.waiting) waiting" else "" end))  [\($h)]"')
+          [ -z "$rows" ] || { printf '%s\n' "$rows"; found=1; }
+        done < <(hosts_lines)
+        [ "$found" -eq 1 ] || echo "No projects."
+        ;;
+      show)
+        ref="${1:-}"
+        proj=$(find_project "$ref") || exit 1
+        IFS='|' read -r pbase ppid pname <<< "$proj"
+        body=$(call GET "${pbase}/api/projects/${ppid}/tasks") || exit 1
+        printf '%s' "$body" | jq -r '"Project \(.project.name)  (\(.project.status))  owner: \(.project.ownerAgentId // "nobody" | .[0:8])\n\(.project.description // "")"' | /usr/bin/sed '/^$/d'
+        printf '%s' "$body" | jq -r '.tasks | if length == 0 then "No cards." else .[] | "  \(.id[0:8])  \(.status | . + (" " * (11 - length)))  \(if .quadrant then (.quadrant | ascii_upcase) else "--" end)  \(.subject)  -> \(.assigneeName // (.assigneeAgentId // "nobody" | .[0:8]))" + (if .status == "waiting" then "  [waiting on \(.waitingOn)]" else "" end) end'
+        ;;
+      *) die "Unknown project command '$sub' (add, list, show). Run: aimaestro-task.sh --help" ;;
+    esac
     ;;
 
   *) die "Unknown command '$CMD'. Run: aimaestro-task.sh --help" ;;
