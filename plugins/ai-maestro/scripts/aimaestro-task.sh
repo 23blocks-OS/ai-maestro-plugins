@@ -40,6 +40,7 @@ Commands:
   show <id>                                                   One card with its comments
   org list                                                    Organizations: records on every host you can reach (the value of the agents' org: tag is the id)
   org add "<name>" [--id <slug>] [--desc "<text>"]            Add an organization record (stored on the host this command talks to; the id comes from the name)
+  org default [<org>]                                         Show, or set, the organization shown for agents and cards with none of their own ("personal" until set)
   org label <id> <org>|none                                   Say which organization a card is for (otherwise its assignee's); none clears it
   add ... --org <org>                                         Label the new card for an organization
 
@@ -370,7 +371,7 @@ case "$CMD" in
           [ -n "$base" ] || continue
           body=$(peer_get "${base%/}/api/orgs")
           [ -n "$body" ] || continue
-          rows=$(printf '%s' "$body" | jq -r --arg h "$hid" '.organizations[]? | "\(.id)  \(.name)\(if .description then "  - " + .description else "" end)  [\($h)]"')
+          rows=$(printf '%s' "$body" | jq -r --arg h "$hid" '.defaultOrg as $d | .organizations[]? | "\(.id)  \(.name)\(if .description then "  - " + .description else "" end)  [\($h)]\(if .id == $d then "  (default)" else "" end)"')
           [ -z "$rows" ] || { printf '%s\n' "$rows"; found=1; }
         done < <(hosts_lines)
         [ "$found" -eq 1 ] || echo "No organization records. (Agents can still carry an org:<id> tag.)"
@@ -389,6 +390,15 @@ case "$CMD" in
         res=$(call POST "/api/orgs" "$json") || exit 1
         echo "Organization $(printf '%s' "$res" | jq -r '.organization.id')  $oname  (tag agents with org:$(printf '%s' "$res" | jq -r '.organization.id'))"
         ;;
+      default)
+        if [ -n "${1:-}" ]; then
+          res=$(call PUT "/api/orgs/default" "$(jq -n --arg i "$1" '{id:$i}')") || exit 1
+          echo "Default organization: $(printf '%s' "$res" | jq -r '.defaultOrg')"
+        else
+          res=$(call GET "/api/orgs/default") || exit 1
+          echo "Default organization: $(printf '%s' "$res" | jq -r '.defaultOrg')"
+        fi
+        ;;
       label)
         id="${1:-}"; o="${2:-}"
         [ -n "$id" ] && [ -n "$o" ] || die "org label needs a card and an organization: org label <id> <org>|none"
@@ -399,7 +409,7 @@ case "$CMD" in
         update "$scope" "$team" "$full" "$hb" "$pid" "$body"
         echo "$(short "$full")  ->  org: $o"
         ;;
-      *) die "Unknown org command '$sub' (list, add, label). Run: aimaestro-task.sh --help" ;;
+      *) die "Unknown org command '$sub' (list, add, default, label). Run: aimaestro-task.sh --help" ;;
     esac
     ;;
 
