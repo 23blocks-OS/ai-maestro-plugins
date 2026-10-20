@@ -38,6 +38,10 @@ Commands:
   project list                                                Projects on every host you can reach, with their <hostId:projectId>
   project show <hostId:projectId>                             One project with its cards
   show <id>                                                   One card with its comments
+  org list                                                    Organizations: records on every host you can reach (the value of the agents' org: tag is the id)
+  org add "<name>" [--id <slug>] [--desc "<text>"]            Add an organization record (stored on the host this command talks to; the id comes from the name)
+  org label <id> <org>|none                                   Say which organization a card is for (otherwise its assignee's); none clears it
+  add ... --org <org>                                         Label the new card for an organization
 
 <id> is the full id or the first characters shown in "[TASK d773ef06]" (it must be unique).
 Quadrants: q1 urgent+important (do first), q2 important only (schedule), q3 urgent only (delegate), q4 neither (delete).
@@ -197,9 +201,10 @@ short() { printf '%s' "$1" | cut -c1-8; }
 case "$CMD" in
   add)
     subject="${1:-}"; [ -n "$subject" ] || die 'add needs a subject: add "<subject>"'; shift
-    desc=""; deps=(); quadrant=""; project=""; assign=""
+    desc=""; deps=(); quadrant=""; project=""; assign=""; org=""
     while [ $# -gt 0 ]; do
       case "$1" in
+        --org) [ $# -ge 2 ] || die "--org needs a value"; org="$2"; shift 2 ;;
         --project) [ $# -ge 2 ] || die "--project needs a value"; project="$2"; shift 2 ;;
         --assign) [ $# -ge 2 ] || die "--assign needs a value"; assign="$2"; shift 2 ;;
         --desc) [ $# -ge 2 ] || die "--desc needs a value"; desc="$2"; shift 2 ;;
@@ -213,6 +218,10 @@ case "$CMD" in
     if [ -n "$quadrant" ]; then
       q=$(quadrant_json "$quadrant") || exit 1
       json=$(printf '%s' "$json" | jq --argjson q "$q" '. + $q')
+    fi
+    if [ -n "$org" ]; then
+      [ -z "$TEAM" ] || die "--org is for your own cards and project cards; a team board does not keep an organization label"
+      json=$(printf '%s' "$json" | jq --arg o "$org" '. + {org:$o}')
     fi
     if [ "${#deps[@]}" -gt 0 ]; then
       # blocked-by ids may be short; resolve each
@@ -346,9 +355,52 @@ case "$CMD" in
       .cards[] | select(.id == $id)
       | "\(.id)\nSubject:  \(.subject)\nStatus:   \(.status)" + (if .status == "waiting" then " (on \(.waitingOn)\(if .waitingNote then ": " + .waitingNote else "" end))" else "" end)
         + "\nQuadrant: \(if .quadrant then (.quadrant | ascii_upcase) else "not placed" end)"
+        + (if .org then "\nOrg:      \(.org)" else "" end)
         + "\nBoard:    \(.scope)" + (if .scope == "team" then " (\(.teamName // .teamId))" elif .scope == "project" then " (\(.projectName // .projectId))" else "" end)
         + (if .description then "\n\n\(.description)" else "" end)
         + (if (.comments // [] | length) > 0 then "\n\nComments:\n" + ([.comments[] | "  [\(.createdAt[0:16])] \(.author.kind)\(if .author.id then " " + .author.id[0:8] else "" end): \(.text)"] | join("\n")) else "" end)'
+    ;;
+
+  org)
+    sub="${1:-}"; shift || true
+    case "$sub" in
+      list)
+        found=0
+        while IFS='|' read -r hid base; do
+          [ -n "$base" ] || continue
+          body=$(peer_get "${base%/}/api/orgs")
+          [ -n "$body" ] || continue
+          rows=$(printf '%s' "$body" | jq -r --arg h "$hid" '.organizations[]? | "\(.id)  \(.name)\(if .description then "  - " + .description else "" end)  [\($h)]"')
+          [ -z "$rows" ] || { printf '%s\n' "$rows"; found=1; }
+        done < <(hosts_lines)
+        [ "$found" -eq 1 ] || echo "No organization records. (Agents can still carry an org:<id> tag.)"
+        ;;
+      add)
+        oname="${1:-}"; [ -n "$oname" ] || die 'org add needs a name: org add "<name>"'; shift
+        oid=""; desc=""
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            --id) [ $# -ge 2 ] || die "--id needs a value"; oid="$2"; shift 2 ;;
+            --desc) [ $# -ge 2 ] || die "--desc needs a value"; desc="$2"; shift 2 ;;
+            *) die "Unknown option for org add: $1" ;;
+          esac
+        done
+        json=$(jq -n --arg n "$oname" --arg i "$oid" --arg d "$desc" '{name:$n} + (if $i != "" then {id:$i} else {} end) + (if $d != "" then {description:$d} else {} end)')
+        res=$(call POST "/api/orgs" "$json") || exit 1
+        echo "Organization $(printf '%s' "$res" | jq -r '.organization.id')  $oname  (tag agents with org:$(printf '%s' "$res" | jq -r '.organization.id'))"
+        ;;
+      label)
+        id="${1:-}"; o="${2:-}"
+        [ -n "$id" ] && [ -n "$o" ] || die "org label needs a card and an organization: org label <id> <org>|none"
+        resolved=$(resolve "$id") || exit 1
+        IFS='|' read -r scope team full hb pid <<< "$resolved"
+        [ "$scope" != "team" ] || die "A team board does not keep an organization label; use your own board or a project"
+        if [ "$o" = "none" ]; then body='{"org":null}'; else body=$(jq -n --arg o "$o" '{org:$o}'); fi
+        update "$scope" "$team" "$full" "$hb" "$pid" "$body"
+        echo "$(short "$full")  ->  org: $o"
+        ;;
+      *) die "Unknown org command '$sub' (list, add, label). Run: aimaestro-task.sh --help" ;;
+    esac
     ;;
 
   project)
