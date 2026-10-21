@@ -164,6 +164,22 @@ function resolveAgent(cwd, agents) {
     return null;
 }
 
+// The hookState the server relays to chat clients: only for events that produce a card or a notice.
+function buildHookStateData(state) {
+    if (!(state.status === 'permission_request' || state.notificationType)) return undefined;
+    return {
+        status: state.status,
+        toolName: state.toolName,
+        toolInput: state.toolInput,
+        description: state.description,
+        options: state.options,
+        message: state.message,
+        notificationType: state.notificationType,
+        // Claude Code's observe-only report: no options, the chat takes them from the pane
+        ...(state.observed && { observed: true }),
+    };
+}
+
 // Broadcast status update via WebSocket (non-blocking)
 async function broadcastStatusUpdate(cwd, state) {
     try {
@@ -178,17 +194,7 @@ async function broadcastStatusUpdate(cwd, state) {
         if (!sessionName) return;
 
         // Build hookState payload for events that produce meaningful state
-        const hookStateData = (state.status === 'permission_request' || state.notificationType)
-            ? {
-                status: state.status,
-                toolName: state.toolName,
-                toolInput: state.toolInput,
-                description: state.description,
-                options: state.options,
-                message: state.message,
-                notificationType: state.notificationType,
-              }
-            : undefined;
+        const hookStateData = buildHookStateData(state);
 
         // Broadcast the status update
         await fetch(`${aimBase()}/api/sessions/activity/update`, {
@@ -1354,6 +1360,7 @@ if (require.main === module) {
 
 module.exports = {
     aimBase,
+    buildHookStateData,
     summarizeToolInput,
     describePermission,
     rotateDebugLog,
