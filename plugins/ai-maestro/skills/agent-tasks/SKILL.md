@@ -5,7 +5,7 @@ allowed-tools: Bash
 compatibility: Requires AI Maestro (aimaestro.dev) with Bash shell access
 metadata:
   author: 23blocks
-  version: 1.2.0
+  version: 1.3.0
 ---
 
 # Agent tasks
@@ -20,6 +20,7 @@ aimaestro-task.sh done <id>                                       # finished
 aimaestro-task.sh wait <id> --on juan --note "needs the final copy"
 aimaestro-task.sh comment <id> "what you did, or what you need"
 aimaestro-task.sh place <id> q1                                   # q1 do first, q2 schedule, q3 delegate, q4 delete (none: take it off)
+aimaestro-task.sh park "Flaky test in sync" --kind bug --note "saw it while fixing the hook"   # a side discovery: backlog, with where it came from
 aimaestro-task.sh list                                            # your board (--quadrant q1 shows one square)
 aimaestro-task.sh show <id>                                       # one card with its comments
 ```
@@ -32,6 +33,10 @@ aimaestro-task.sh show <id>                                       # one card wit
 - You stop because you need something: `wait` and say on whom: `juan` (the operator), `outside` (someone not on AI Maestro), `hold` (paused on purpose, nobody is blocking it), or another agent's id. Say what exactly in `--note`; it is the first thing the operator reads. `start` again when the wait is over.
 - The work is done and someone should look: `review`. Done and nothing more to do: `done`.
 - Use `comment` for context about a task instead of sending a new message about it. Your comments stay on the card and are shown; they are not sent to anyone's prompt.
+
+## Park what you notice, do not act on it
+
+One task often turns up others: a bug beside the one you are fixing, an idea, something to look up. Do not drop it and do not chase it. `park "<subject>" --kind bug|idea|research --note "<what you saw>"` puts it in the backlog in one line and you go back to your task. The card records you, the repo and the host it came from, and the operator sees it with a link back to your conversation. Add `--thread <message id>` when it came out of a message. Park one card per thing; use `add` for work you are taking on now. `aimaestro-task.sh schema` prints every command and flag as JSON if you need the exact shape.
 
 ## The matrix
 
