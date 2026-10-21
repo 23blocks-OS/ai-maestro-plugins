@@ -649,21 +649,32 @@ resolve_agent() {
     local encoded_query
     encoded_query=$(printf '%s' "$agent_part" | jq -sRr @uri 2>/dev/null)
 
-    # Step 2a: Search by name/alias on local API
-    local search_response jq_result
+    # Step 2a: Search on the local API. The search is a loose text match (it also reads task
+    # descriptions), so "crab-cto" can return crab-hr first because crab-hr's description mentions
+    # crab-cto. Never take the first hit: an exact id, name, alias or label wins; one agent whose name,
+    # alias or label contains the text is accepted; anything else is refused or not found (acting on a guess would change the wrong agent).
+    local search_response jq_result pick hit_count
     search_response=$(_api_request "${api_base}/api/agents?q=${encoded_query}" "Search agents") || search_response=""
 
-    if ! jq_result=$(echo "$search_response" | jq -r '.agents[0].id // empty' 2>&1); then
-        [[ "${DEBUG:-}" == "true" ]] && print_warning "JSON parse warning: $jq_result" >&2
-        jq_result=""
+    pick=$(echo "$search_response" | jq -c --arg q "$agent_part" '
+        (.agents // []) as $a
+        | ($q | ascii_downcase) as $w
+        | ([$a[] | select([.id, .name, .alias, .label] | map(. // "" | ascii_downcase) | index($w))][0])
+          // ([$a[] | select([.name, .alias, .label] | map(. // "" | ascii_downcase | contains($w)) | any)] | if length == 1 then .[0] else empty end)' 2>/dev/null) || pick=""
+    hit_count=$(echo "$search_response" | jq -r --arg q "$agent_part" '[(.agents // [])[] | select([.name, .alias, .label] | map(. // "" | ascii_downcase | contains($q | ascii_downcase)) | any)] | length' 2>/dev/null) || hit_count=0
+    [[ -z "$pick" ]] || hit_count=0
+
+    if [[ -z "$pick" ]] && [[ "${hit_count:-0}" -gt 1 ]]; then
+        print_error "'${agent_part}' is not an exact name, and ${hit_count} agents have it in their name:"
+        echo "$search_response" | jq -r --arg q "$agent_part" '.agents[] | select([.name, .alias, .label] | map(. // "" | ascii_downcase | contains($q | ascii_downcase)) | any) | "   \(.name)\(if .label then " (" + .label + ")" else "" end)  \(.id)"' >&2
+        echo "Use the exact name or the id." >&2
+        return 1
     fi
-    RESOLVED_AGENT_ID="$jq_result"
+
+    RESOLVED_AGENT_ID=$(echo "$pick" | jq -r '.id // empty' 2>/dev/null) || RESOLVED_AGENT_ID=""
 
     if [[ -n "$RESOLVED_AGENT_ID" ]]; then
-        if ! jq_result=$(echo "$search_response" | jq -r '.agents[0].alias // .agents[0].name // empty' 2>&1); then
-            jq_result=""
-        fi
-        RESOLVED_ALIAS="$jq_result"
+        RESOLVED_ALIAS=$(echo "$pick" | jq -r '.alias // .name // empty' 2>/dev/null) || RESOLVED_ALIAS=""
         RESOLVED_HOST_ID=$(get_self_host_id 2>/dev/null || echo "localhost")
         RESOLVED_HOST_URL="$api_base"
         RESOLVED_NAME="$RESOLVED_ALIAS"
