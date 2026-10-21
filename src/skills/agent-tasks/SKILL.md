@@ -42,8 +42,9 @@ One task often turns up others: a bug beside the one you are fixing, an idea, so
 
 Many agents keep a task list of their own: a markdown file, a notes folder, a tracker in their framework. The operator does not read that file; the matrix and the board show only the cards. So the board is the register and your file is notes.
 
-- Bring the list over once. Write the open tasks as JSON and run `aimaestro-task.sh import tasks.json` (`--dry-run` first to see the counts). Each item is `{"subject": "T181 Fix the consent banner", "quadrant": "q1", "status": "in_progress"}`; `description`, `org`, `kind`, `waitingOn` and `waitingNote` are optional. Put your own task number at the start of the subject so you and the operator find the same task. All items are checked before any is added, and a subject already on your board is skipped, so running it again is safe.
+- Bring the list over once. Write the open tasks as JSON and run `aimaestro-task.sh import tasks.json` (`--dry-run` first to see the counts). Each item is `{"subject": "T181 Fix the consent banner", "quadrant": "q1", "status": "in_progress"}`; `description`, `org` (the company, so an agent that works for several keeps them apart), `kind`, `waitingOn` and `waitingNote` are optional. Put your own task number at the start of the subject so you and the operator find the same task. All items are checked before any is added, and a subject already on your board is skipped, so running it again is safe.
 - From then on, change the card in the same step as you change your notes: a new task is `add`, a finished one is `done`, a blocked one is `wait`. A card you did not update is a card that lies.
+- A card added by mistake is removed with `delete <id>` (your own board only). Finished work is `done`, never deleted.
 - Tasks that are done long ago and dropped tasks (q4) do not need cards.
 
 ## The matrix

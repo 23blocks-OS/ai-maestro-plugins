@@ -4,7 +4,7 @@
 # and answer comments on it. Cards live where you live (this host), on your own board;
 # with --team a card goes on a team board instead.
 #
-# Version: 1.2.0
+# Version: 1.3.0
 set -u -o pipefail
 
 API="${AIMAESTRO_API:-http://localhost:23000}"
@@ -40,6 +40,7 @@ Commands:
   project list                                                Projects on every host you can reach, with their <hostId:projectId>
   project show <hostId:projectId>                             One project with its cards
   show <id>                                                   One card with its comments
+  delete <id>                                                 Remove a card you added by mistake from your own board (a card that is finished is moved with "done", not deleted)
   import <file.json|-> [--dry-run]                            Add many cards at once from a JSON list (skips a subject already on your own board); the way to bring an existing task list onto the board
   schema                                                      Every command, flag and exit code as JSON (for agents; needs no agent id)
   org list                                                    Organizations: records on every host you can reach (the value of the agents' org: tag is the id)
@@ -76,7 +77,7 @@ if [ "$CMD" = "schema" ]; then
   cat <<'SCHEMA'
 {
   "tool": "aimaestro-task.sh",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "about": "An agent's own board in AI Maestro. Needs AIM_AGENT_ID (or --agent) for every command except schema and help.",
   "global_flags": [
     {"flag": "--agent", "value": "agent id", "about": "Which agent you are; overrides AIM_AGENT_ID"},
@@ -101,6 +102,7 @@ if [ "$CMD" = "schema" ]; then
     {"name": "show", "args": ["<id>"], "about": "One card with its origin and comments"},
     {"name": "project", "subcommands": ["add <name> [--owner <agent>] [--desc <text>]", "list", "show <hostId:projectId>"], "about": "Projects"},
     {"name": "org", "subcommands": ["list", "add <name> [--id <slug>] [--desc <text>]", "default [<org>]", "label <id> <org>|none"], "about": "Organizations"},
+    {"name": "delete", "args": ["<id>"], "about": "Remove a card from your own board (not a team or project card). For a card added by mistake; finished work is moved with done."},
     {"name": "import", "args": ["<file.json | ->"], "flags": ["--dry-run"], "about": "Add many cards from a JSON list: [{subject, description?, status?, quadrant?, org?, kind?, waitingOn?, waitingNote?}]. All items are checked before any is added; a subject already on your own board is skipped, so running it twice is safe."},
     {"name": "schema", "about": "This document"}
   ],
@@ -343,6 +345,15 @@ case "$CMD" in
       res=$(call POST "/api/agents/${AGENT}/tasks" "$json") || exit 1
     fi
     echo "Parked $(short "$(printf '%s' "$res" | jq -r '.task.id')")  [$kind]  $subject  (backlog)"
+    ;;
+
+  delete)
+    id="${1:-}"
+    resolved=$(resolve "$id") || exit 1
+    IFS='|' read -r scope team full hb pid <<< "$resolved"
+    [ "$scope" = "agent" ] || die "Only a card on your own board can be deleted here; a ${scope} card belongs to the ${scope}. Move it to done, or ask the operator."
+    call DELETE "/api/agents/${AGENT}/tasks/${full}" >/dev/null || exit 1
+    echo "Deleted $(short "$full")"
     ;;
 
   import)
