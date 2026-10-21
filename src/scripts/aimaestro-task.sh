@@ -4,7 +4,7 @@
 # and answer comments on it. Cards live where you live (this host), on your own board;
 # with --team a card goes on a team board instead.
 #
-# Version: 1.1.0
+# Version: 1.2.0
 set -u -o pipefail
 
 API="${AIMAESTRO_API:-http://localhost:23000}"
@@ -40,6 +40,7 @@ Commands:
   project list                                                Projects on every host you can reach, with their <hostId:projectId>
   project show <hostId:projectId>                             One project with its cards
   show <id>                                                   One card with its comments
+  import <file.json|-> [--dry-run]                            Add many cards at once from a JSON list (skips a subject already on your own board); the way to bring an existing task list onto the board
   schema                                                      Every command, flag and exit code as JSON (for agents; needs no agent id)
   org list                                                    Organizations: records on every host you can reach (the value of the agents' org: tag is the id)
   org add "<name>" [--id <slug>] [--desc "<text>"]            Add an organization record (stored on the host this command talks to; the id comes from the name)
@@ -75,7 +76,7 @@ if [ "$CMD" = "schema" ]; then
   cat <<'SCHEMA'
 {
   "tool": "aimaestro-task.sh",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "about": "An agent's own board in AI Maestro. Needs AIM_AGENT_ID (or --agent) for every command except schema and help.",
   "global_flags": [
     {"flag": "--agent", "value": "agent id", "about": "Which agent you are; overrides AIM_AGENT_ID"},
@@ -100,6 +101,7 @@ if [ "$CMD" = "schema" ]; then
     {"name": "show", "args": ["<id>"], "about": "One card with its origin and comments"},
     {"name": "project", "subcommands": ["add <name> [--owner <agent>] [--desc <text>]", "list", "show <hostId:projectId>"], "about": "Projects"},
     {"name": "org", "subcommands": ["list", "add <name> [--id <slug>] [--desc <text>]", "default [<org>]", "label <id> <org>|none"], "about": "Organizations"},
+    {"name": "import", "args": ["<file.json | ->"], "flags": ["--dry-run"], "about": "Add many cards from a JSON list: [{subject, description?, status?, quadrant?, org?, kind?, waitingOn?, waitingNote?}]. All items are checked before any is added; a subject already on your own board is skipped, so running it twice is safe."},
     {"name": "schema", "about": "This document"}
   ],
   "ids": "A card id is the full id or the first characters shown by list; it must be unique.",
@@ -341,6 +343,61 @@ case "$CMD" in
       res=$(call POST "/api/agents/${AGENT}/tasks" "$json") || exit 1
     fi
     echo "Parked $(short "$(printf '%s' "$res" | jq -r '.task.id')")  [$kind]  $subject  (backlog)"
+    ;;
+
+  import)
+    src="${1:-}"; [ -n "$src" ] || die "import needs a file of cards (or - for standard input): import <file.json|-> [--dry-run]"; shift
+    dry=0
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --dry-run) dry=1; shift ;;
+        *) die "Unknown option for import: $1" ;;
+      esac
+    done
+    if [ "$src" = "-" ]; then items=$(cat); else [ -r "$src" ] || die "Cannot read $src"; items=$(cat "$src"); fi
+    # Check everything first: a half-imported list is harder to repair than a refused one
+    problems=$(printf '%s' "$items" | jq -r '
+      if type != "array" then "The file must be a JSON list of cards"
+      else to_entries[] | . as $e | $e.value
+        | if type != "object" then "item \($e.key + 1): not an object"
+          elif ((.subject // "") | type != "string") or ((.subject // "") | gsub("\\s"; "") == "") then "item \($e.key + 1): subject is required"
+          elif (.status != null) and ((["backlog","pending","in_progress","review","waiting","completed"] | index(.status)) == null) then "item \($e.key + 1) (\(.subject)): unknown status \(.status)"
+          elif (.quadrant != null) and ((["q1","q2","q3","q4","none"] | index(.quadrant)) == null) then "item \($e.key + 1) (\(.subject)): unknown quadrant \(.quadrant)"
+          elif (.status == "waiting") and ((.waitingOn // "") == "") then "item \($e.key + 1) (\(.subject)): a waiting card needs waitingOn (juan, outside, hold or an agent)"
+          else empty end
+      end' 2>&1) || die "Not valid JSON: $problems"
+    [ -z "$problems" ] || { printf '%s\n' "$problems" >&2; die "Nothing was added: fix the list above"; }
+    total=$(printf '%s' "$items" | jq 'length')
+    # Subjects already on my own board (any status): the same list can be imported twice
+    have=$(call GET "/api/agents/${AGENT}/tasks" | jq -c '[.tasks[]?.subject]') || exit 1
+    added=0; skipped=0; failed=0; seen_new="[]"
+    while IFS= read -r item; do
+      subj=$(printf '%s' "$item" | jq -r '.subject | sub("^\\s+"; "") | sub("\\s+$"; "")')
+      dup=$(jq -n --argjson h "$have" --argjson n "$seen_new" --arg s "$subj" '(($h + $n) | index($s)) != null')
+      if [ "$dup" = "true" ]; then skipped=$((skipped + 1)); continue; fi
+      if [ "$dry" -eq 1 ]; then added=$((added + 1)); seen_new=$(printf '%s' "$seen_new" | jq -c --arg s "$subj" '. + [$s]'); continue; fi
+      body=$(printf '%s' "$item" | jq -c --arg s "$subj" --argjson o "$(origin_json)" '
+        {subject: $s, origin: $o}
+        + (if .description then {description: .description} else {} end)
+        + (if .status and .status != "pending" then {status: .status} else {} end)
+        + (if .waitingOn then {waitingOn: .waitingOn} else {} end)
+        + (if .waitingNote then {waitingNote: .waitingNote} else {} end)
+        + (if .org then {org: .org} else {} end)
+        + (if .kind then {kind: .kind} else {} end)
+        + (if .quadrant == "q1" then {urgent: true, important: true}
+           elif .quadrant == "q2" then {urgent: false, important: true}
+           elif .quadrant == "q3" then {urgent: true, important: false}
+           elif .quadrant == "q4" then {urgent: false, important: false}
+           else {} end)')
+      if out=$(curl -sS --max-time 15 -X POST -H 'Content-Type: application/json' -d "$body" -w '\n%{http_code}' "${API}/api/agents/${AGENT}/tasks" 2>&1) && case "${out##*$'\n'}" in 2*) true ;; *) false ;; esac; then
+        added=$((added + 1)); seen_new=$(printf '%s' "$seen_new" | jq -c --arg s "$subj" '. + [$s]')
+      else
+        failed=$((failed + 1)); echo "Failed: $subj: $(printf '%s' "${out%$'\n'*}" | jq -r '.message // .error // empty' 2>/dev/null)" >&2
+      fi
+    done < <(printf '%s' "$items" | jq -c '.[]')
+    verb="Added"; [ "$dry" -eq 0 ] || verb="Would add"
+    echo "$verb $added, skipped $skipped already on your board, failed $failed (of $total)"
+    [ "$failed" -eq 0 ] || exit 1
     ;;
 
   start|review|done|move)

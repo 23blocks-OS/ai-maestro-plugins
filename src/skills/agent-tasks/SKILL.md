@@ -1,11 +1,11 @@
 ---
 name: agent-tasks
-description: "Keep your own task board in AI Maestro current, so the operator can see what you are doing, where each task is and what you are waiting for. Use when you take on, start, finish, hand over, pause or block on a task; when you need to wait for the operator, another agent or someone outside; when a card's urgency or importance changes (the operator's Eisenhower matrix), and when a prompt starts with [TASK <id>], which is an instruction written on one of your cards."
+description: "Keep your own task board and Eisenhower matrix in AI Maestro current, so the operator can see what you are doing, where each task is, how urgent and important it is, and what you are waiting for. Use when you take on, start, finish, hand over, pause or block on a task; when you keep a task list, priorities or a to-do file of your own (the board is where the operator reads it); when you need to wait for the operator, another agent or someone outside; when a card's urgency or importance changes (the operator's Eisenhower matrix), and when a prompt starts with [TASK <id>], which is an instruction written on one of your cards."
 allowed-tools: Bash
 compatibility: Requires AI Maestro (aimaestro.dev) with Bash shell access
 metadata:
   author: 23blocks
-  version: 1.3.0
+  version: 1.4.0
 ---
 
 # Agent tasks
@@ -37,6 +37,14 @@ aimaestro-task.sh show <id>                                       # one card wit
 ## Park what you notice, do not act on it
 
 One task often turns up others: a bug beside the one you are fixing, an idea, something to look up. Do not drop it and do not chase it. `park "<subject>" --kind bug|idea|research --note "<what you saw>"` puts it in the backlog in one line and you go back to your task. The card records you, the repo and the host it came from, and the operator sees it with a link back to your conversation. Add `--thread <message id>` when it came out of a message. Park one card per thing; use `add` for work you are taking on now. `aimaestro-task.sh schema` prints every command and flag as JSON if you need the exact shape.
+
+## If you already keep a task list
+
+Many agents keep a task list of their own: a markdown file, a notes folder, a tracker in their framework. The operator does not read that file; the matrix and the board show only the cards. So the board is the register and your file is notes.
+
+- Bring the list over once. Write the open tasks as JSON and run `aimaestro-task.sh import tasks.json` (`--dry-run` first to see the counts). Each item is `{"subject": "T181 Fix the consent banner", "quadrant": "q1", "status": "in_progress"}`; `description`, `org`, `kind`, `waitingOn` and `waitingNote` are optional. Put your own task number at the start of the subject so you and the operator find the same task. All items are checked before any is added, and a subject already on your board is skipped, so running it again is safe.
+- From then on, change the card in the same step as you change your notes: a new task is `add`, a finished one is `done`, a blocked one is `wait`. A card you did not update is a card that lies.
+- Tasks that are done long ago and dropped tasks (q4) do not need cards.
 
 ## The matrix
 
