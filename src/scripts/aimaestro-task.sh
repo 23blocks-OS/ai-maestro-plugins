@@ -4,7 +4,7 @@
 # and answer comments on it. Cards live where you live (this host), on your own board;
 # with --team a card goes on a team board instead.
 #
-# Version: 1.3.0
+# Version: 1.4.0
 set -u -o pipefail
 
 API="${AIMAESTRO_API:-http://localhost:23000}"
@@ -23,10 +23,12 @@ usage() {
 Usage: aimaestro-task.sh [--agent <id>] [--team <teamId>] <command> ...
 
 Commands:
-  add "<subject>" [--desc "<text>"] [--blocked-by <id>]... [--team <teamId>] [--quadrant q1|q2|q3|q4]   Add a card (starts as To Do)
+  add "<subject>" [--desc "<text>"] [--blocked-by <id>]... [--team <teamId>] [--quadrant q1|q2|q3|q4] [--due YYYY-MM-DD] [--owner <agent>]...   Add a card (starts as To Do)
   add "<subject>" --project <hostId:projectId> [--assign <agent id or name>] ...                  Add a card to a project (assigned to you unless --assign)
   park "<subject>" [--kind task|idea|bug|research] [--note "<context>"] [--desc "<text>"] [--thread <message id>] [--team <teamId>] [--project <hostId:projectId>]
                                                               Park something you noticed while doing other work: goes to the backlog with where it came from
+  due <id> <YYYY-MM-DD>|none                                  Set, or clear, the date a card is due (the matrix sorts by it)
+  owners <id> <agent>... | none                               Say who else owns a card (the card also shows on their boards); replaces the list, none clears it
   start <id>                                                  Move to In Progress
   review <id>                                                 Move to Review
   done <id>                                                   Move to Done
@@ -34,7 +36,7 @@ Commands:
   wait <id> --on juan|outside|hold|<agent-id> [--note "<text>"]   Waiting, and on whom
   comment <id> "<text>"                                       Write on the card (stored and shown; never sent to anyone)
   place <id> q1|q2|q3|q4|none                                 Put a card on the Eisenhower matrix (none = take it off)
-  list [--mine] [--waiting-on <who>] [--status <status>] [--quadrant q1|q2|q3|q4|unplaced]   Your board (own, team and project cards assigned to you)
+  list [--mine] [--overdue] [--waiting-on <who>] [--status <status>] [--quadrant q1|q2|q3|q4|unplaced]   Your board (own, team and project cards assigned to you)
   list --project <hostId:projectId>                           Every card of one project, whoever it is for
   project add "<name>" [--owner <agent>] [--desc "<text>"]    Start a project (stored on the owner's host: the one this command talks to)
   project list                                                Projects on every host you can reach, with their <hostId:projectId>
@@ -77,7 +79,7 @@ if [ "$CMD" = "schema" ]; then
   cat <<'SCHEMA'
 {
   "tool": "aimaestro-task.sh",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "about": "An agent's own board in AI Maestro. Needs AIM_AGENT_ID (or --agent) for every command except schema and help.",
   "global_flags": [
     {"flag": "--agent", "value": "agent id", "about": "Which agent you are; overrides AIM_AGENT_ID"},
@@ -89,8 +91,10 @@ if [ "$CMD" = "schema" ]; then
   "waiting_on": ["juan", "outside", "hold", "<agent id or name>"],
   "quadrants": ["q1", "q2", "q3", "q4", "none"],
   "commands": [
-    {"name": "add", "args": ["<subject>"], "flags": ["--desc <text>", "--blocked-by <id> (repeatable)", "--team <teamId>", "--project <hostId:projectId>", "--assign <agent>", "--quadrant q1|q2|q3|q4", "--org <org>", "--thread <message id>"], "about": "Add a card (starts as To Do). Records where it came from."},
+    {"name": "add", "args": ["<subject>"], "flags": ["--desc <text>", "--blocked-by <id> (repeatable)", "--team <teamId>", "--project <hostId:projectId>", "--assign <agent>", "--quadrant q1|q2|q3|q4", "--org <org>", "--due YYYY-MM-DD", "--owner <agent> (repeatable)", "--thread <message id>"], "about": "Add a card (starts as To Do). Records where it came from."},
     {"name": "park", "args": ["<subject>"], "flags": ["--kind task|idea|bug|research", "--note <context>", "--desc <text>", "--thread <message id>", "--team <teamId>", "--project <hostId:projectId>", "--assign <agent>"], "about": "Park a side discovery in the backlog without leaving your current work."},
+    {"name": "due", "args": ["<id>", "<YYYY-MM-DD>|none"], "about": "Set or clear the date a card is due"},
+    {"name": "owners", "args": ["<id>", "<agent>... | none"], "about": "Other owners of a card: it also shows on their boards. Replaces the list; none clears it. Nobody is notified."},
     {"name": "start", "args": ["<id>"], "about": "Move to In Progress"},
     {"name": "review", "args": ["<id>"], "about": "Move to Review"},
     {"name": "done", "args": ["<id>"], "about": "Move to Done"},
@@ -98,12 +102,12 @@ if [ "$CMD" = "schema" ]; then
     {"name": "wait", "args": ["<id>"], "flags": ["--on <who> (required)", "--note <text>"], "about": "Waiting, and on whom"},
     {"name": "comment", "args": ["<id>", "<text>"], "about": "Write on the card; never sent to anyone's prompt"},
     {"name": "place", "args": ["<id>", "<quadrant>"], "about": "Put a card on the Eisenhower matrix (none takes it off)"},
-    {"name": "list", "flags": ["--mine", "--waiting-on <who>", "--status <status>", "--quadrant q1|q2|q3|q4|unplaced", "--project <hostId:projectId>"], "about": "Your board"},
+    {"name": "list", "flags": ["--mine", "--overdue", "--waiting-on <who>", "--status <status>", "--quadrant q1|q2|q3|q4|unplaced", "--project <hostId:projectId>"], "about": "Your board"},
     {"name": "show", "args": ["<id>"], "about": "One card with its origin and comments"},
     {"name": "project", "subcommands": ["add <name> [--owner <agent>] [--desc <text>]", "list", "show <hostId:projectId>"], "about": "Projects"},
     {"name": "org", "subcommands": ["list", "add <name> [--id <slug>] [--desc <text>]", "default [<org>]", "label <id> <org>|none"], "about": "Organizations"},
     {"name": "delete", "args": ["<id>"], "about": "Remove a card from your own board (not a team or project card). For a card added by mistake; finished work is moved with done."},
-    {"name": "import", "args": ["<file.json | ->"], "flags": ["--dry-run"], "about": "Add many cards from a JSON list: [{subject, description?, status?, quadrant?, org?, kind?, waitingOn?, waitingNote?}]. All items are checked before any is added; a subject already on your own board is skipped, so running it twice is safe."},
+    {"name": "import", "args": ["<file.json | ->"], "flags": ["--dry-run"], "about": "Add many cards from a JSON list: [{subject, description?, status?, quadrant?, org?, due?, owners?, kind?, waitingOn?, waitingNote?}]. All items are checked before any is added; a subject already on your own board is skipped, so running it twice is safe."},
     {"name": "schema", "about": "This document"}
   ],
   "ids": "A card id is the full id or the first characters shown by list; it must be unique.",
@@ -244,6 +248,16 @@ is_status() { case " $STATUS_LIST " in *" $1 "*) return 0 ;; *) return 1 ;; esac
 
 short() { printf '%s' "$1" | cut -c1-8; }
 
+# A due date is a calendar day, YYYY-MM-DD. The server checks that the day exists.
+is_date() { printf '%s' "$1" | /usr/bin/grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; }
+
+# Other owners of a card: agent ids from ids or names, as a JSON list
+owners_json() { # agent...
+  local out="[]" a
+  for a in "$@"; do out=$(printf '%s' "$out" | jq -c --arg id "$(agent_id_of "$a")" '. + [$id]'); done
+  printf '%s' "$out"
+}
+
 # Where a new card comes from: this agent, the repo it is working in, its conversation when known,
 # and a thread or note if given. The server adds the host. Always valid JSON.
 origin_json() { # [thread] [note]
@@ -258,9 +272,11 @@ origin_json() { # [thread] [note]
 case "$CMD" in
   add)
     subject="${1:-}"; [ -n "$subject" ] || die 'add needs a subject: add "<subject>"'; shift
-    desc=""; deps=(); quadrant=""; project=""; assign=""; org=""; thread=""
+    desc=""; deps=(); quadrant=""; project=""; assign=""; org=""; thread=""; due=""; owners=()
     while [ $# -gt 0 ]; do
       case "$1" in
+        --due) [ $# -ge 2 ] || die "--due needs a date (YYYY-MM-DD)"; is_date "$2" || die "--due must be a date like 2026-10-31"; due="$2"; shift 2 ;;
+        --owner) [ $# -ge 2 ] || die "--owner needs an agent"; owners+=("$2"); shift 2 ;;
         --thread) [ $# -ge 2 ] || die "--thread needs a value"; thread="$2"; shift 2 ;;
         --org) [ $# -ge 2 ] || die "--org needs a value"; org="$2"; shift 2 ;;
         --project) [ $# -ge 2 ] || die "--project needs a value"; project="$2"; shift 2 ;;
@@ -274,6 +290,8 @@ case "$CMD" in
     done
     json=$(jq -n --arg s "$subject" --arg d "$desc" '{subject:$s} + (if $d != "" then {description:$d} else {} end)')
     json=$(printf '%s' "$json" | jq --argjson o "$(origin_json "$thread")" '. + {origin:$o}')
+    [ -z "$due" ] || json=$(printf '%s' "$json" | jq --arg d "$due" '. + {due:$d}')
+    if [ "${#owners[@]}" -gt 0 ]; then json=$(printf '%s' "$json" | jq --argjson o "$(owners_json "${owners[@]}")" '. + {owners:$o}'); fi
     if [ -n "$quadrant" ]; then
       q=$(quadrant_json "$quadrant") || exit 1
       json=$(printf '%s' "$json" | jq --argjson q "$q" '. + $q')
@@ -372,10 +390,14 @@ case "$CMD" in
       else to_entries[] | . as $e | $e.value
         | (if type == "object" then .status else null end) as $st
         | (if type == "object" then .quadrant else null end) as $qd
+        | (if type == "object" then .due else null end) as $du
+        | (if type == "object" then .owners else null end) as $ow
         | if type != "object" then "item \($e.key + 1): not an object"
           elif ((.subject // "") | type != "string") or ((.subject // "") | gsub("\\s"; "") == "") then "item \($e.key + 1): subject is required"
           elif ($st != null) and ((["backlog","pending","in_progress","review","waiting","completed"] | index($st)) == null) then "item \($e.key + 1) (\(.subject)): unknown status \($st)"
           elif ($qd != null) and ((["q1","q2","q3","q4","none"] | index($qd)) == null) then "item \($e.key + 1) (\(.subject)): unknown quadrant \($qd)"
+          elif ($du != null) and (($du | type) != "string" or ($du | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$") | not)) then "item \($e.key + 1) (\(.subject)): due must be a date like 2026-10-31"
+          elif ($ow != null) and ((($ow | type) != "array") or ($ow | map(type != "string") | any)) then "item \($e.key + 1) (\(.subject)): owners must be a list of agent ids or names"
           elif ($st == "waiting") and ((.waitingOn // "") == "") then "item \($e.key + 1) (\(.subject)): a waiting card needs waitingOn (juan, outside, hold or an agent)"
           else empty end
       end' 2>&1) || die "Not valid JSON: $problems"
@@ -396,6 +418,8 @@ case "$CMD" in
         + (if .waitingOn then {waitingOn: .waitingOn} else {} end)
         + (if .waitingNote then {waitingNote: .waitingNote} else {} end)
         + (if .org then {org: .org} else {} end)
+        + (if .due then {due: .due} else {} end)
+        + (if (.owners // []) | length > 0 then {owners: .owners} else {} end)
         + (if .kind then {kind: .kind} else {} end)
         + (if .quadrant == "q1" then {urgent: true, important: true}
            elif .quadrant == "q2" then {urgent: false, important: true}
@@ -411,6 +435,26 @@ case "$CMD" in
     verb="Added"; [ "$dry" -eq 0 ] || verb="Would add"
     echo "$verb $added, skipped $skipped already on your board, failed $failed (of $total)"
     [ "$failed" -eq 0 ] || exit 1
+    ;;
+
+  due)
+    id="${1:-}"; d="${2:-}"
+    [ -n "$d" ] || die "due needs a date: due <id> <YYYY-MM-DD>|none"
+    if [ "$d" = "none" ]; then body='{"due":null}'; else is_date "$d" || die "The date must look like 2026-10-31"; body=$(jq -n --arg d "$d" '{due:$d}'); fi
+    resolved=$(resolve "$id") || exit 1
+    IFS='|' read -r scope team full hb pid <<< "$resolved"
+    update "$scope" "$team" "$full" "$hb" "$pid" "$body"
+    echo "$(short "$full")  ->  due: $d"
+    ;;
+
+  owners)
+    id="${1:-}"; shift || true
+    [ $# -ge 1 ] || die "owners needs agents, or none: owners <id> <agent>... | none"
+    if [ "$1" = "none" ]; then body='{"owners":[]}'; else body=$(jq -n --argjson o "$(owners_json "$@")" '{owners:$o}'); fi
+    resolved=$(resolve "$id") || exit 1
+    IFS='|' read -r scope team full hb pid <<< "$resolved"
+    update "$scope" "$team" "$full" "$hb" "$pid" "$body"
+    echo "$(short "$full")  ->  owners: $*"
     ;;
 
   start|review|done|move)
@@ -467,10 +511,11 @@ case "$CMD" in
     ;;
 
   list)
-    waiting_on=""; status=""; quadrant=""; project=""
+    waiting_on=""; status=""; quadrant=""; project=""; overdue=""
     while [ $# -gt 0 ]; do
       case "$1" in
         --mine) shift ;;
+        --overdue) overdue=1; shift ;;
         --project) [ $# -ge 2 ] || die "--project needs a value"; project="$2"; shift 2 ;;
         --quadrant) [ $# -ge 2 ] || die "--quadrant needs a value"; quadrant="$2"; shift 2 ;;
         --waiting-on) [ $# -ge 2 ] || die "--waiting-on needs a value"; waiting_on="$2"; shift 2 ;;
@@ -492,12 +537,15 @@ case "$CMD" in
       pc=$(project_cards)
       b=$(printf '%s' "$b" | jq --argjson p "$pc" '.cards += $p')
     fi
-    printf '%s' "$b" | jq -r --arg w "$waiting_on" --arg s "$status" --arg q "$quadrant" --arg who "$showwho" '
+    today=$(date +%Y-%m-%d)
+    printf '%s' "$b" | jq -r --arg w "$waiting_on" --arg s "$status" --arg q "$quadrant" --arg who "$showwho" --arg od "$overdue" --arg today "$today" '
       .cards
-      | map(select(($w == "" or (.status == "waiting" and .waitingOn == $w)) and ($s == "" or .status == $s) and ($q == "" or ($q == "unplaced" and (.quadrant == null)) or .quadrant == $q)))
+      | map(select(($od == "" or (.due != null and .due < $today and .status != "completed")) and ($w == "" or (.status == "waiting" and .waitingOn == $w)) and ($s == "" or .status == $s) and ($q == "" or ($q == "unplaced" and (.quadrant == null)) or .quadrant == $q)))
       | if length == 0 then "No cards." else
           .[] | "\(.id[0:8])  \(.status | . + (" " * (11 - length)))  \(if .quadrant then (.quadrant | ascii_upcase) else "--" end)  \(if (.kind // "task") != "task" then "[" + .kind + "] " else "" end)\(.subject)"
             + (if .status == "waiting" then "  [waiting on \(.waitingOn)\(if .waitingNote then ": " + .waitingNote else "" end)]" else "" end)
+            + (if .due then "  [due \(.due)\(if .due < $today and .status != "completed" then " OVERDUE" else "" end)]" else "" end)
+            + (if (.owners // [] | length) > 0 then "  [+\(.owners | length) owners]" else "" end)
             + (if .scope == "team" then "  (team: \(.teamName // .teamId))" else "" end)
             + (if .scope == "project" and $who == "" then "  (project: \(.projectName // .projectId))" else "" end)
             + (if $who != "" then "  -> \(.assigneeName // (.assigneeAgentId // "nobody" | .[0:8]))" else "" end)
@@ -517,6 +565,8 @@ case "$CMD" in
       | "\(.id)\nSubject:  \(.subject)\nStatus:   \(.status)" + (if .status == "waiting" then " (on \(.waitingOn)\(if .waitingNote then ": " + .waitingNote else "" end))" else "" end)
         + "\nQuadrant: \(if .quadrant then (.quadrant | ascii_upcase) else "not placed" end)"
         + (if .org then "\nOrg:      \(.org)" else "" end)
+        + (if .due then "\nDue:      \(.due)" else "" end)
+        + (if (.owners // [] | length) > 0 then "\nOwners:   \(.owners | map(.[0:8]) | join(", "))" else "" end)
         + (if (.kind // "task") != "task" then "\nKind:     \(.kind)" else "" end)
         + (if .origin then "\nCame from: " + ([(.origin.agentId // empty | .[0:8]), (.origin.repo // empty), (if .origin.hostId then "host " + .origin.hostId else empty end), (if .origin.threadId then "message " + .origin.threadId else empty end)] | join(" · ")) + (if .origin.note then "\n           " + .origin.note else "" end) else "" end)
         + "\nBoard:    \(.scope)" + (if .scope == "team" then " (\(.teamName // .teamId))" elif .scope == "project" then " (\(.projectName // .projectId))" else "" end)

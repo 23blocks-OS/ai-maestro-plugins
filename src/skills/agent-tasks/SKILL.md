@@ -5,7 +5,7 @@ allowed-tools: Bash
 compatibility: Requires AI Maestro (aimaestro.dev) with Bash shell access
 metadata:
   author: 23blocks
-  version: 1.4.0
+  version: 1.5.0
 ---
 
 # Agent tasks
@@ -19,6 +19,8 @@ aimaestro-task.sh review <id>                                     # it is waitin
 aimaestro-task.sh done <id>                                       # finished
 aimaestro-task.sh wait <id> --on juan --note "needs the final copy"
 aimaestro-task.sh comment <id> "what you did, or what you need"
+aimaestro-task.sh due <id> 2026-10-31                             # the day it is due (none clears it); the matrix sorts by it
+aimaestro-task.sh owners <id> <agent> <agent>                     # who else owns it: it also shows on their boards (none clears; nobody is notified)
 aimaestro-task.sh place <id> q1                                   # q1 do first, q2 schedule, q3 delegate, q4 delete (none: take it off)
 aimaestro-task.sh park "Flaky test in sync" --kind bug --note "saw it while fixing the hook"   # a side discovery: backlog, with where it came from
 aimaestro-task.sh list                                            # your board (--quadrant q1 shows one square)
@@ -33,6 +35,10 @@ aimaestro-task.sh show <id>                                       # one card wit
 - You stop because you need something: `wait` and say on whom: `juan` (the operator), `outside` (someone not on AI Maestro), `hold` (paused on purpose, nobody is blocking it), or another agent's id. Say what exactly in `--note`; it is the first thing the operator reads. `start` again when the wait is over.
 - The work is done and someone should look: `review`. Done and nothing more to do: `done`.
 - Use `comment` for context about a task instead of sending a new message about it. Your comments stay on the card and are shown; they are not sent to anyone's prompt.
+
+## Due dates and shared cards
+
+Give a card a due date when someone is waiting on the day: `add "..." --due 2026-10-31`, or `due <id> 2026-10-31` later. Overdue open cards are marked in your `list` (`list --overdue` shows only those) and in the operator's matrix and Attention page. When a task belongs to several agents, name the others with `owners <id> <agent>...` (or `add ... --owner <agent>`): the card shows on each owner's board and in the matrix once, with all its owners. Naming an owner does not message them; if they need to know now, send them a message too. In `import` files use `"due": "2026-10-31"` and `"owners": ["agent-a", "agent-b"]`.
 
 ## Park what you notice, do not act on it
 
