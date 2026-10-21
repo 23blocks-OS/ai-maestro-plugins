@@ -359,11 +359,13 @@ case "$CMD" in
     problems=$(printf '%s' "$items" | jq -r '
       if type != "array" then "The file must be a JSON list of cards"
       else to_entries[] | . as $e | $e.value
+        | (if type == "object" then .status else null end) as $st
+        | (if type == "object" then .quadrant else null end) as $qd
         | if type != "object" then "item \($e.key + 1): not an object"
           elif ((.subject // "") | type != "string") or ((.subject // "") | gsub("\\s"; "") == "") then "item \($e.key + 1): subject is required"
-          elif (.status != null) and ((["backlog","pending","in_progress","review","waiting","completed"] | index(.status)) == null) then "item \($e.key + 1) (\(.subject)): unknown status \(.status)"
-          elif (.quadrant != null) and ((["q1","q2","q3","q4","none"] | index(.quadrant)) == null) then "item \($e.key + 1) (\(.subject)): unknown quadrant \(.quadrant)"
-          elif (.status == "waiting") and ((.waitingOn // "") == "") then "item \($e.key + 1) (\(.subject)): a waiting card needs waitingOn (juan, outside, hold or an agent)"
+          elif ($st != null) and ((["backlog","pending","in_progress","review","waiting","completed"] | index($st)) == null) then "item \($e.key + 1) (\(.subject)): unknown status \($st)"
+          elif ($qd != null) and ((["q1","q2","q3","q4","none"] | index($qd)) == null) then "item \($e.key + 1) (\(.subject)): unknown quadrant \($qd)"
+          elif ($st == "waiting") and ((.waitingOn // "") == "") then "item \($e.key + 1) (\(.subject)): a waiting card needs waitingOn (juan, outside, hold or an agent)"
           else empty end
       end' 2>&1) || die "Not valid JSON: $problems"
     [ -z "$problems" ] || { printf '%s\n' "$problems" >&2; die "Nothing was added: fix the list above"; }
