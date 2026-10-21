@@ -4,7 +4,7 @@
 # and answer comments on it. Cards live where you live (this host), on your own board;
 # with --team a card goes on a team board instead.
 #
-# Version: 1.0.0
+# Version: 1.1.0
 set -u -o pipefail
 
 API="${AIMAESTRO_API:-http://localhost:23000}"
@@ -25,6 +25,8 @@ Usage: aimaestro-task.sh [--agent <id>] [--team <teamId>] <command> ...
 Commands:
   add "<subject>" [--desc "<text>"] [--blocked-by <id>]... [--team <teamId>] [--quadrant q1|q2|q3|q4]   Add a card (starts as To Do)
   add "<subject>" --project <hostId:projectId> [--assign <agent id or name>] ...                  Add a card to a project (assigned to you unless --assign)
+  park "<subject>" [--kind task|idea|bug|research] [--note "<context>"] [--desc "<text>"] [--thread <message id>] [--team <teamId>] [--project <hostId:projectId>]
+                                                              Park something you noticed while doing other work: goes to the backlog with where it came from
   start <id>                                                  Move to In Progress
   review <id>                                                 Move to Review
   done <id>                                                   Move to Done
@@ -38,6 +40,7 @@ Commands:
   project list                                                Projects on every host you can reach, with their <hostId:projectId>
   project show <hostId:projectId>                             One project with its cards
   show <id>                                                   One card with its comments
+  schema                                                      Every command, flag and exit code as JSON (for agents; needs no agent id)
   org list                                                    Organizations: records on every host you can reach (the value of the agents' org: tag is the id)
   org add "<name>" [--id <slug>] [--desc "<text>"]            Add an organization record (stored on the host this command talks to; the id comes from the name)
   org default [<org>]                                         Show, or set, the organization shown for agents and cards with none of their own ("personal" until set)
@@ -67,6 +70,45 @@ done
 CMD="${1:-}"
 [ -n "$CMD" ] || { usage; exit 1; }
 shift
+
+if [ "$CMD" = "schema" ]; then
+  cat <<'SCHEMA'
+{
+  "tool": "aimaestro-task.sh",
+  "version": "1.1.0",
+  "about": "An agent's own board in AI Maestro. Needs AIM_AGENT_ID (or --agent) for every command except schema and help.",
+  "global_flags": [
+    {"flag": "--agent", "value": "agent id", "about": "Which agent you are; overrides AIM_AGENT_ID"},
+    {"flag": "--team", "value": "team id", "about": "Act on a team board instead of your own"}
+  ],
+  "environment": {"AIM_AGENT_ID": "your agent id", "AIMAESTRO_API": "API base (default http://localhost:23000)", "AIM_SESSION_ID": "your conversation id, recorded as a card's origin when set"},
+  "statuses": ["backlog", "pending", "in_progress", "review", "waiting", "completed"],
+  "kinds": ["task", "idea", "bug", "research"],
+  "waiting_on": ["juan", "outside", "hold", "<agent id or name>"],
+  "quadrants": ["q1", "q2", "q3", "q4", "none"],
+  "commands": [
+    {"name": "add", "args": ["<subject>"], "flags": ["--desc <text>", "--blocked-by <id> (repeatable)", "--team <teamId>", "--project <hostId:projectId>", "--assign <agent>", "--quadrant q1|q2|q3|q4", "--org <org>", "--thread <message id>"], "about": "Add a card (starts as To Do). Records where it came from."},
+    {"name": "park", "args": ["<subject>"], "flags": ["--kind task|idea|bug|research", "--note <context>", "--desc <text>", "--thread <message id>", "--team <teamId>", "--project <hostId:projectId>", "--assign <agent>"], "about": "Park a side discovery in the backlog without leaving your current work."},
+    {"name": "start", "args": ["<id>"], "about": "Move to In Progress"},
+    {"name": "review", "args": ["<id>"], "about": "Move to Review"},
+    {"name": "done", "args": ["<id>"], "about": "Move to Done"},
+    {"name": "move", "args": ["<id>", "<status>"], "about": "Move to backlog, pending, in_progress, review or completed"},
+    {"name": "wait", "args": ["<id>"], "flags": ["--on <who> (required)", "--note <text>"], "about": "Waiting, and on whom"},
+    {"name": "comment", "args": ["<id>", "<text>"], "about": "Write on the card; never sent to anyone's prompt"},
+    {"name": "place", "args": ["<id>", "<quadrant>"], "about": "Put a card on the Eisenhower matrix (none takes it off)"},
+    {"name": "list", "flags": ["--mine", "--waiting-on <who>", "--status <status>", "--quadrant q1|q2|q3|q4|unplaced", "--project <hostId:projectId>"], "about": "Your board"},
+    {"name": "show", "args": ["<id>"], "about": "One card with its origin and comments"},
+    {"name": "project", "subcommands": ["add <name> [--owner <agent>] [--desc <text>]", "list", "show <hostId:projectId>"], "about": "Projects"},
+    {"name": "org", "subcommands": ["list", "add <name> [--id <slug>] [--desc <text>]", "default [<org>]", "label <id> <org>|none"], "about": "Organizations"},
+    {"name": "schema", "about": "This document"}
+  ],
+  "ids": "A card id is the full id or the first characters shown by list; it must be unique.",
+  "output": "Human-readable text. The commands that change a card print one line naming it.",
+  "exit_codes": {"0": "ok", "1": "error: the message is on stderr (bad usage, unknown or ambiguous card, AI Maestro unreachable, or the server refused the change)"}
+}
+SCHEMA
+  exit 0
+fi
 
 [ -n "$AGENT" ] || die "I do not know which agent you are: AIM_AGENT_ID is not set. Pass --agent <id>."
 
@@ -198,13 +240,24 @@ is_status() { case " $STATUS_LIST " in *" $1 "*) return 0 ;; *) return 1 ;; esac
 
 short() { printf '%s' "$1" | cut -c1-8; }
 
+# Where a new card comes from: this agent, the repo it is working in, its conversation when known,
+# and a thread or note if given. The server adds the host. Always valid JSON.
+origin_json() { # [thread] [note]
+  local repo="" top
+  top=$(git rev-parse --show-toplevel 2>/dev/null || true)
+  [ -n "$top" ] && repo=$(basename "$top")
+  jq -n --arg a "$AGENT" --arg r "$repo" --arg s "${AIM_SESSION_ID:-}" --arg t "${1:-}" --arg n "${2:-}" \
+    '{agentId:$a} + (if $r != "" then {repo:$r} else {} end) + (if $s != "" then {sessionId:$s} else {} end) + (if $t != "" then {threadId:$t} else {} end) + (if $n != "" then {note:$n} else {} end)'
+}
+
 # ---- commands ----
 case "$CMD" in
   add)
     subject="${1:-}"; [ -n "$subject" ] || die 'add needs a subject: add "<subject>"'; shift
-    desc=""; deps=(); quadrant=""; project=""; assign=""; org=""
+    desc=""; deps=(); quadrant=""; project=""; assign=""; org=""; thread=""
     while [ $# -gt 0 ]; do
       case "$1" in
+        --thread) [ $# -ge 2 ] || die "--thread needs a value"; thread="$2"; shift 2 ;;
         --org) [ $# -ge 2 ] || die "--org needs a value"; org="$2"; shift 2 ;;
         --project) [ $# -ge 2 ] || die "--project needs a value"; project="$2"; shift 2 ;;
         --assign) [ $# -ge 2 ] || die "--assign needs a value"; assign="$2"; shift 2 ;;
@@ -216,6 +269,7 @@ case "$CMD" in
       esac
     done
     json=$(jq -n --arg s "$subject" --arg d "$desc" '{subject:$s} + (if $d != "" then {description:$d} else {} end)')
+    json=$(printf '%s' "$json" | jq --argjson o "$(origin_json "$thread")" '. + {origin:$o}')
     if [ -n "$quadrant" ]; then
       q=$(quadrant_json "$quadrant") || exit 1
       json=$(printf '%s' "$json" | jq --argjson q "$q" '. + $q')
@@ -251,6 +305,42 @@ case "$CMD" in
     fi
     id=$(printf '%s' "$res" | jq -r '.task.id')
     echo "Added $(short "$id")  $subject"
+    ;;
+
+  park)
+    subject="${1:-}"; [ -n "$subject" ] || die 'park needs a subject: park "<subject>" [--kind idea|bug|research|task] [--note "<context>"]'; shift
+    desc=""; kind="task"; note=""; thread=""; project=""; assign=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --kind) [ $# -ge 2 ] || die "--kind needs a value"; kind="$2"; shift 2 ;;
+        --note) [ $# -ge 2 ] || die "--note needs a value"; note="$2"; shift 2 ;;
+        --desc) [ $# -ge 2 ] || die "--desc needs a value"; desc="$2"; shift 2 ;;
+        --thread) [ $# -ge 2 ] || die "--thread needs a value"; thread="$2"; shift 2 ;;
+        --team) [ $# -ge 2 ] || die "--team needs a value"; TEAM="$2"; shift 2 ;;
+        --project) [ $# -ge 2 ] || die "--project needs a value"; project="$2"; shift 2 ;;
+        --assign) [ $# -ge 2 ] || die "--assign needs a value"; assign="$2"; shift 2 ;;
+        *) die "Unknown option for park: $1" ;;
+      esac
+    done
+    case "$kind" in task|idea|bug|research) ;; *) die "Unknown kind '$kind' (task, idea, bug or research)" ;; esac
+    json=$(jq -n --arg s "$subject" --arg d "$desc" --arg k "$kind" --argjson o "$(origin_json "$thread" "$note")" \
+      '{subject:$s, status:"backlog", kind:$k, origin:$o} + (if $d != "" then {description:$d} else {} end)')
+    if [ -n "$project" ]; then
+      [ -z "$TEAM" ] || die "A card goes on a team board or a project board, not both"
+      proj=$(find_project "$project") || exit 1
+      IFS='|' read -r pbase ppid pname <<< "$proj"
+      who=$(agent_id_of "${assign:-$AGENT}")
+      json=$(printf '%s' "$json" | jq --arg a "$who" '. + {assigneeAgentId:$a}')
+      res=$(call POST "${pbase}/api/projects/${ppid}/tasks" "$json") || exit 1
+      echo "Parked $(short "$(printf '%s' "$res" | jq -r '.task.id')")  [$kind]  $subject  (project: $pname)"
+      exit 0
+    elif [ -n "$TEAM" ]; then
+      # A team's backlog is shared: the card is not assigned to you, so nobody's work is changed by it
+      res=$(call POST "/api/teams/${TEAM}/tasks" "$json") || exit 1
+    else
+      res=$(call POST "/api/agents/${AGENT}/tasks" "$json") || exit 1
+    fi
+    echo "Parked $(short "$(printf '%s' "$res" | jq -r '.task.id')")  [$kind]  $subject  (backlog)"
     ;;
 
   start|review|done|move)
@@ -336,7 +426,7 @@ case "$CMD" in
       .cards
       | map(select(($w == "" or (.status == "waiting" and .waitingOn == $w)) and ($s == "" or .status == $s) and ($q == "" or ($q == "unplaced" and (.quadrant == null)) or .quadrant == $q)))
       | if length == 0 then "No cards." else
-          .[] | "\(.id[0:8])  \(.status | . + (" " * (11 - length)))  \(if .quadrant then (.quadrant | ascii_upcase) else "--" end)  \(.subject)"
+          .[] | "\(.id[0:8])  \(.status | . + (" " * (11 - length)))  \(if .quadrant then (.quadrant | ascii_upcase) else "--" end)  \(if (.kind // "task") != "task" then "[" + .kind + "] " else "" end)\(.subject)"
             + (if .status == "waiting" then "  [waiting on \(.waitingOn)\(if .waitingNote then ": " + .waitingNote else "" end)]" else "" end)
             + (if .scope == "team" then "  (team: \(.teamName // .teamId))" else "" end)
             + (if .scope == "project" and $who == "" then "  (project: \(.projectName // .projectId))" else "" end)
@@ -357,6 +447,8 @@ case "$CMD" in
       | "\(.id)\nSubject:  \(.subject)\nStatus:   \(.status)" + (if .status == "waiting" then " (on \(.waitingOn)\(if .waitingNote then ": " + .waitingNote else "" end))" else "" end)
         + "\nQuadrant: \(if .quadrant then (.quadrant | ascii_upcase) else "not placed" end)"
         + (if .org then "\nOrg:      \(.org)" else "" end)
+        + (if (.kind // "task") != "task" then "\nKind:     \(.kind)" else "" end)
+        + (if .origin then "\nCame from: " + ([(.origin.agentId // empty | .[0:8]), (.origin.repo // empty), (if .origin.hostId then "host " + .origin.hostId else empty end), (if .origin.threadId then "message " + .origin.threadId else empty end)] | join(" · ")) + (if .origin.note then "\n           " + .origin.note else "" end) else "" end)
         + "\nBoard:    \(.scope)" + (if .scope == "team" then " (\(.teamName // .teamId))" elif .scope == "project" then " (\(.projectName // .projectId))" else "" end)
         + (if .description then "\n\n\(.description)" else "" end)
         + (if (.comments // [] | length) > 0 then "\n\nComments:\n" + ([.comments[] | "  [\(.createdAt[0:16])] \(.author.kind)\(if .author.id then " " + .author.id[0:8] else "" end): \(.text)"] | join("\n")) else "" end)'
