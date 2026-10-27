@@ -27,7 +27,7 @@ Run it with `python3 scripts/audit_build.py` (Python 3 standard library only). I
 
 **Against the baseline:** URLs removed and added · pages whose index state (`noindex`) changed · canonical, title, description and JSON-LD changes · whether `_redirects` or `sitemap.xml` changed. A hard failure that the baseline already has is **inherited**; one it does not have is **new**. Fix new failures first; they are the ones this change caused.
 
-`--strict-claims` fails any JSON-LD that carries `price`, `priceRange`, `offers`, `availability`, `openingHours`, `aggregateRating` or `review`. Turn it on when the business has no published price policy and no consented reviews. Structured data must not claim what the page cannot back.
+`--strict-claims` fails any JSON-LD that carries `price`, `priceRange`, `offers`, `availability`, `openingHours`, `aggregateRating`, `review`, or merchant-listing terms (`Product`, `Offer`, `gtin`, `shippingDetails`, `hasMerchantReturnPolicy`). Turn it on when the business has no published price policy and no consented reviews. Structured data must not claim what the page cannot back.
 
 ## Report the evidence
 

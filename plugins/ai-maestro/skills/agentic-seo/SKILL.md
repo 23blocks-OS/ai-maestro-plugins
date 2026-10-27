@@ -4,10 +4,10 @@ description: "Audit and implement SEO for a website: meta tags, canonical URLs, 
 allowed-tools: Read Write Edit Bash Glob Grep WebFetch
 compatibility: The build audit script needs Python 3 (standard library only)
 user-invocable: true
-argument-hint: "[audit|implement|structured-data|llms-txt|crawler-controls|checklist|audit-build] [target]"
+argument-hint: "[audit|implement|structured-data|llms-txt|crawler-controls|checklist|audit-build|notices] [target]"
 metadata:
   author: 23blocks
-  version: 2.2.0
+  version: 2.3.0
 ---
 
 # Agentic SEO
@@ -59,6 +59,7 @@ For performance, measure the Core Web Vitals (LCP, INP, CLS; https://web.dev/art
 | `llms-txt` | Maintain llms.txt, only if the owner wants it | `reference/llms-txt.md` |
 | `crawler-controls` | Decide what Google and AI vendor crawlers may use (neutral guide) | `reference/crawler-controls.md` |
 | `checklist [path]` | Quick 15-item check against one page's built HTML | `reference/checklist.md` |
+| `notices` | Investigate a Search Console notice or a URL you do not recognize (merchant listings on a site with no products, spam pages, old origins) | `reference/search-console-notices.md` |
 | `audit-build [dir]` | Audit every page of the built HTML of a whole site, optionally diffed against the live build; framework-agnostic | `reference/audit-build.md` |
 
 `audit` reads the source of one page; `audit-build` reads the built HTML of every page. With no sub-command, default to `audit` on the target path. Use `audit-build` when a change touches many pages (a rebuild, a migration, a redesign) or when you need to know what it does to pages that already rank.

@@ -422,10 +422,23 @@ fi
 # Note: jq adds a trailing newline, so we remove it with tr before hashing
 PAYLOAD_HASH=$(echo "$MESSAGE_JSON" | jq -cS '.payload' | tr -d '\n' | $OPENSSL_BIN dgst -sha256 -binary | base64 | tr -d '\n')
 # Extract envelope fields in a single jq call for efficiency
-read -r FROM_ADDR TO_ADDR SUBJ < <(echo "$MESSAGE_JSON" | jq -r '[.envelope.from, .envelope.to, .envelope.subject] | @tsv')
+FROM_ADDR=$(echo "$MESSAGE_JSON" | jq -r '.envelope.from')
+TO_ADDR=$(echo "$MESSAGE_JSON" | jq -r '.envelope.to')
+# The signature must cover the subject exactly as the envelope stores it. @tsv escaped a
+# backslash, tab or newline, so the signed text differed from the stored one and every
+# verifier that reads the envelope said BAD SIGNATURE. The trailing "x" keeps a final newline
+# that command substitution would strip.
+SUBJ=$(echo "$MESSAGE_JSON" | jq -j '.envelope.subject, "x"'); SUBJ="${SUBJ%x}"
 # PRIORITY and REPLY_TO are already set from arguments (empty string if not provided)
 SIGN_DATA="${FROM_ADDR}|${TO_ADDR}|${SUBJ}|${PRIORITY}|${REPLY_TO}|${PAYLOAD_HASH}"
 SIGNATURE=$(sign_message "$SIGN_DATA")
+
+# Local delivery has no server in between, so this script is the only checker. Record "valid"
+# only when the signature just made verifies with our own public key, instead of assuming it.
+LOCAL_SIG_VALID=false
+if [ -n "$SIGNATURE" ] && verify_signature "$SIGN_DATA" "$SIGNATURE" "${AMP_KEYS_DIR}/public.pem"; then
+    LOCAL_SIG_VALID=true
+fi
 
 # Add signature to message
 MESSAGE_JSON=$(echo "$MESSAGE_JSON" | jq --arg sig "$SIGNATURE" '.envelope.signature = $sig')
@@ -585,7 +598,7 @@ if [ "$ROUTE" = "local" ]; then
 
             # Apply content security (injection detection + wrapping) before writing
             if type apply_content_security &>/dev/null; then
-                DELIVERY_MSG=$(apply_content_security "$DELIVERY_MSG" "${AMP_TENANT:-default}" "true")
+                DELIVERY_MSG=$(apply_content_security "$DELIVERY_MSG" "${AMP_TENANT:-default}" "$LOCAL_SIG_VALID")
             fi
 
             echo "$DELIVERY_MSG" > "${RECIPIENT_INBOX}/${SENDER_DIR}/${MSG_ID}.json"
@@ -742,7 +755,7 @@ if [ "$ROUTE" = "local" ]; then
 
                 # Apply content security (injection detection + wrapping) before writing
                 if type apply_content_security &>/dev/null; then
-                    DELIVERY_MSG=$(apply_content_security "$DELIVERY_MSG" "${AMP_TENANT:-default}" "true")
+                    DELIVERY_MSG=$(apply_content_security "$DELIVERY_MSG" "${AMP_TENANT:-default}" "$LOCAL_SIG_VALID")
                 fi
 
                 echo "$DELIVERY_MSG" > "${RECIPIENT_INBOX}/${SENDER_DIR}/${MSG_ID}.json"
