@@ -6,6 +6,7 @@ Quick 15-item verification checklist to run against the prerendered HTML of one 
 - The 15-Point Checklist (meta tags, social tags, structured data, infrastructure)
 - Sitemap fields
 - Quick Bulk Check
+- Navigation and launch checks
 - Interpreting Results
 - After Fixing Issues
 
@@ -151,6 +152,17 @@ echo "14. Prerender:  [check your framework config]"
 echo "15. H1 tag:     $(grep -c '<h1' $FILE) found"
 echo "=== Done ==="
 ```
+
+## Navigation and launch checks
+
+These are not part of the 15 points. Run them when you add a page or change navigation.
+
+- **Every visible label that names a section links to that section's index.** If the word "Blog" appears as a heading, a tag or a card label, it links to the blog index. Test: search the built HTML for the word as plain text outside a link.
+- **Primary sections are reachable from the header, not only the footer.** Test: list the links in the header navigation on a built page and compare with the sections you want found.
+- **Breadcrumb JSON-LD describes a path the visitor can see or follow.** Structured data must match visible content. A visible link to the parent section is enough; do not add markup for a label.
+- **A new page:** a URL under its topic hub; a title and canonical of its own (canonical equals the URL); a line in the sitemap; at least one contextual link to it from a related page and one from the hub; an `hreflang` pair only when the translation exists; and a note of which pages gained the link.
+- **Analytics events and privacy text.** A tag trigger on `mailto:` fires on every `mailto:` link on every page. Before the page ships, check that the privacy text names every tracked click, or show the address as plain text.
+- **Consent changes need a request test.** Load the page in each consent state and list the analytics requests before and after the choice. Observed in 2026-10 tests, not a Google contract: the `gcs` parameter on a collect request showed `G101` with advertising storage denied and analytics storage granted, and `G111` with both granted.
 
 ## Interpreting Results
 

@@ -10,7 +10,7 @@ Python 3 standard library only. Reads files. Sends nothing. Writes only what --c
 BUILD_DIR   the built output (dist/, out/, public/ ...), one index.html per route.
 --baseline  another build of the CURRENT live site (for example `git archive main`, then build).
             The diff answers "what does this change do to what already ranks?"
---strict-claims   fail JSON-LD that carries price, rating, review, availability or opening-hours
+--strict-claims   fail JSON-LD that carries price, rating, review, availability, opening-hours or merchant-listing terms
             fields. Use it when the business has no consented reviews and no published price.
 
 Hard checks FAIL a page. Advisory checks never do; they are counted and listed apart.
@@ -22,7 +22,7 @@ from html.parser import HTMLParser
 TITLE_RANGE = (50, 60)
 DESCRIPTION_RANGE = (150, 160)
 
-CLAIMS = re.compile(r'aggregateRating|ratingValue|"review"|"Review"|priceRange|"price"|"offers"|availability|openingHours', re.I)
+CLAIMS = re.compile(r'aggregateRating|ratingValue|"review"|"Review"|priceRange|"price"|"offers"|availability|openingHours|"Product"|"Offer"|gtin\d*|shippingDetails|hasMerchantReturnPolicy', re.I)
 
 
 class Page(HTMLParser):
@@ -137,7 +137,7 @@ def page_checks(route, p, root, pages, domain, handle, strict, redir_src):
                 ty = n.get('@type') if isinstance(n, dict) else None
                 types.update(ty if isinstance(ty, list) else [ty])
         except (ValueError, AttributeError, TypeError): hard.append('JSON-LD does not parse')
-        if strict and CLAIMS.search(b): hard.append('JSON-LD carries a price/rating/review/availability term')
+        if strict and CLAIMS.search(b): hard.append('JSON-LD carries a price/rating/review/availability/merchant term')
     h1 = [t for lv, t in p.headings if lv == 1]
     if len(h1) != 1: hard.append('%d H1' % len(h1))
     last = 0
@@ -265,6 +265,13 @@ def selftest():
         for w in want: assert w in got, ('positive control: did not fire', w, got)
         assert any('no page built' in s for s in site) and any('still built' in s for s in site) and any('not built' in s for s in site), site
         assert diff['canonical'] == ['/a/'] and diff['index_state'] == ['/'] and diff['added'] == ['/b/'], diff
+        # strict claims: the clean fixture stays clean, and a page with merchant markup fails
+        _, rows, site, _ = audit(os.path.join(t, 'good'), dom, strict=True)
+        assert not any(v[0] for v in rows.values()), ('strict negative control failed', rows)
+        mp = os.path.join(t, 'good', 'index.html'); ms = open(mp).read()
+        open(mp, 'w').write(ms.replace('{"@type":"WebSite"}', '{"@type":"Product","gtin13":"1"}'))
+        _, rows, site, _ = audit(os.path.join(t, 'good'), dom, strict=True)
+        assert any('merchant term' in x for x in rows['/'][0]), ('strict positive control: merchant markup did not fire', rows['/'])
     print('self-test passed: clean fixture raised 0 failures; every planted defect fired.')
     return 0
 

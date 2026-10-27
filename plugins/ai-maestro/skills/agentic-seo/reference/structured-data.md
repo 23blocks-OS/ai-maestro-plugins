@@ -4,6 +4,7 @@ Guide for adding and updating JSON-LD structured data on web pages. Each schema 
 
 - Critical Rules
 - Schema Types and When to Use Them (SoftwareApplication, Organization, BreadcrumbList, FAQPage, WebPage, Article)
+- Property and type pitfalls
 - Combining Schemas
 - Choosing the Right Schema Combination
 - Validation
@@ -161,6 +162,13 @@ const schema = {
   'image': '{DOMAIN}{SOCIAL_IMAGE_PATH}article-og.png'
 };
 ```
+
+## Property and type pitfalls
+
+- **Check each property's types on schema.org.** Open `schema.org/<property>` and read "Used on these types". Example: `provider` applies to `Service`, not to `LocalBusiness` or its subtypes such as `ProfessionalService`. Validators warn "not recognized for this type". Link a `LocalBusiness` subtype to its company with `parentOrganization`; keep `provider` for `Service`.
+- **`Product` and `Offer` only describe things you sell.** A site that sells no product should have none. Search Console then reports Merchant listings issues for any stray page; see `search-console-notices.md`.
+- **Never add `review` or `aggregateRating`** without real, first-party reviews shown on the page.
+- **Do not add shipping, returns, price or availability** to clear a validator warning. Each is a commitment the business must hold.
 
 ## Combining Schemas
 

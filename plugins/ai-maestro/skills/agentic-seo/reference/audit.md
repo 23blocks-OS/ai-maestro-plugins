@@ -5,6 +5,7 @@ Run a systematic SEO audit on a target page and generate a comprehensive pass/fa
 - Inputs
 - Audit Steps (1 to 7)
 - Judgement calls
+- Method notes
 - Generate Report
 
 
@@ -105,6 +106,17 @@ Read the component's template file and verify:
 - **Check 22 and 26**: also run Google's Rich Results Test and the Schema Markup Validator on the built page and list their errors.
 - **Check 32 (image alt)**: a missing `alt` fails. `alt=""` is valid for decoration (and is the right markup for it); list those for a human to confirm rather than failing them.
 - To audit many pages at once, or to compare a build against the live site, use `audit-build`.
+
+## Method notes
+
+- **Give every negative a positive control.** A validator or a grep that finds nothing proves nothing until you know it would have found something. Run it on a deliberately broken page, or on a string you know is there.
+- **Lab speed tests vary.** One Lighthouse run can show an LCP twice the median. Run each page at least three times and report the median and the range. Say "lab, not field".
+- **Field data needs a key.** The keyless PageSpeed Insights API often answers 429 (daily quota). Report it as not run, with the reason; do not paste lab numbers as field numbers.
+- **Say total or floor.** A scan finds only what you point it at: "50 sitemap URLs and 129 linked pages, none carry X" is a floor, not "the site has none".
+- **A sample of one is a sample of one.** Say "checked one page of 84; the template suggests the rest" and mark the rest REASONED.
+- **A captcha is a stop sign.** If a validator or search engine shows an "unusual traffic" wall, do not bypass it. Record the page as not run and ask a person to run it in a normal browser.
+- **Tools overlap.** Two accessibility tools often find the same colour-contrast class. Say what the second tool added; do not double the count.
+- **Fix a warning from its cause, not its text.** If you cannot read a warning, state your reasoned cause and mark it REASONED. Then ask for the text.
 
 ## Generate Report
 
