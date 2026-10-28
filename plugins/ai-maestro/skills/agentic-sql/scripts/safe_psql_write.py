@@ -123,6 +123,17 @@ def _qualified(t):
     return f"{db}.{name}"
 
 
+def _mixed_case_quoted(nodes):
+    """True if any identifier in these nodes is quoted and has upper-case letters. Postgres keeps the case of a
+    quoted name ("Plan" is not plan), but the write list is compared lower-case, so such a name could pass the
+    list while pointing at a different table or column."""
+    for n in nodes:
+        for ident in n.find_all(exp.Identifier):
+            if ident.args.get("quoted") and ident.name != ident.name.lower():
+                return True
+    return False
+
+
 def gate_write(sql, settings, allowed=None):
     """Validate one write statement. Returns a dict: kind, table, columns, tree (placeholders still :name)."""
     allowed = allowed if allowed is not None else set(sp.DEFAULT_ALLOWED_FUNCTIONS)
@@ -168,7 +179,13 @@ def gate_write(sql, settings, allowed=None):
     if reasons:
         raise Refused(sorted(set(reasons)))
 
-    table = _qualified(_table_of(tree))
+    target = _table_of(tree)
+    written = list(tree.this.expressions) if kind == "INSERT" and isinstance(tree.this, exp.Schema) else \
+        [e.this for e in tree.expressions if kind == "UPDATE" and isinstance(e, exp.EQ)]
+    if _mixed_case_quoted([target, *written]):
+        raise Refused(["quoted mixed-case names are not supported for the target table or its columns: "
+                       "the settings file compares lower-case names, and Postgres treats \"Name\" and name as different objects"])
+    table = _qualified(target)
     cfg = settings["tables"].get(table)
     if cfg is None:
         raise Refused([f"table {table} is not on the write list"])

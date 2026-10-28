@@ -108,6 +108,10 @@ if [ -z "$FILENAME" ]; then
     FILENAME="${AGENT_ID}-export-${TIMESTAMP}.zip"
 fi
 
+# The filename comes from the server response: keep only a safe basename
+FILENAME=$(basename -- "$FILENAME" | tr -c 'A-Za-z0-9._-' '_')
+case "$FILENAME" in ""|.|..|.*) FILENAME="${AGENT_ID}-export-$(date +%Y-%m-%dT%H-%M-%S).zip" ;; esac
+
 # Move temp file to final location
 OUTPUT_PATH="$OUTPUT_DIR/$FILENAME"
 mv "$TEMP_FILE" "$OUTPUT_PATH"

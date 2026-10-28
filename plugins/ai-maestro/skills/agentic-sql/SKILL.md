@@ -7,7 +7,7 @@ user-invocable: true
 argument-hint: "[audit|find|add|run|curate|schema|write] [target]"
 metadata:
   author: 23blocks
-  version: 1.4.0
+  version: 1.4.1
 ---
 
 ## First-Time Setup

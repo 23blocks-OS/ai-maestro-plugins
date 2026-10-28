@@ -13,12 +13,17 @@ else
     exit 1
 fi
 
+# Percent-encode a value for use in a URL query string
+urlencode() {
+    printf '%s' "$1" | jq -sRr @uri
+}
+
 # Make a docs query API call
 docs_query() {
     local agent_id="$1"
     local action="$2"
     shift 2
-    local params="$@"
+    local params="$*"
 
     api_query "GET" "/api/agents/${agent_id}/docs?action=${action}${params}"
 }
@@ -65,7 +70,7 @@ docs_list() {
     local doc_type="${2:-}"
 
     if [ -n "$doc_type" ]; then
-        docs_query "$agent_id" "list" "&type=${doc_type}"
+        docs_query "$agent_id" "list" "&type=$(urlencode "$doc_type")"
     else
         docs_query "$agent_id" "list"
     fi
@@ -75,14 +80,14 @@ docs_list() {
 docs_get() {
     local agent_id="$1"
     local doc_id="$2"
-    docs_query "$agent_id" "get" "&id=${doc_id}"
+    docs_query "$agent_id" "get" "&id=$(urlencode "$doc_id")"
 }
 
 # Find by type
 docs_find_by_type() {
     local agent_id="$1"
     local doc_type="$2"
-    docs_query "$agent_id" "find" "&type=${doc_type}"
+    docs_query "$agent_id" "find" "&type=$(urlencode "$doc_type")"
 }
 
 # Initialize docs - get session and agent ID

@@ -57,6 +57,15 @@ if ! command -v git &> /dev/null; then
     exit 1
 fi
 
+# Reject path components that could escape a base directory
+safe_rel_path() {
+    local p="$1"
+    case "$p" in
+        ""|/*|..|../*|*/..|*/../*) return 1 ;;
+    esac
+    return 0
+}
+
 # Read manifest
 if [ ! -f "$MANIFEST" ]; then
     echo -e "${RED}Error: plugin.manifest.json not found${NC}"
@@ -108,11 +117,20 @@ for i in $(seq 0 $((SOURCE_COUNT - 1))); do
     echo -e "${CYAN}[$((i + 1))/$SOURCE_COUNT] ${SOURCE_NAME}${NC} (${SOURCE_TYPE})"
     [ -n "$SOURCE_DESC" ] && echo "  $SOURCE_DESC"
 
+    if [[ ! "$SOURCE_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || [ "$SOURCE_NAME" = "." ] || [ "$SOURCE_NAME" = ".." ]; then
+        echo -e "${RED}  Error: invalid source name: $SOURCE_NAME${NC}"
+        exit 1
+    fi
+
     SOURCE_DIR=""
 
     case "$SOURCE_TYPE" in
         local)
             SOURCE_PATH=$(jq -r ".sources[$i].path" "$MANIFEST")
+            if ! safe_rel_path "${SOURCE_PATH#./}"; then
+                echo -e "${RED}  Error: local source path must stay inside the repo: $SOURCE_PATH${NC}"
+                exit 1
+            fi
             SOURCE_DIR="$SCRIPT_DIR/$SOURCE_PATH"
 
             if [ ! -d "$SOURCE_DIR" ]; then
@@ -126,18 +144,24 @@ for i in $(seq 0 $((SOURCE_COUNT - 1))); do
             REPO_URL=$(jq -r ".sources[$i].repo" "$MANIFEST")
             REPO_REF=$(jq -r ".sources[$i].ref // \"main\"" "$MANIFEST")
 
+            # Only fetch over https; never treat a value as a git option
+            if [[ "$REPO_URL" != https://* ]] || [[ "$REPO_REF" == -* ]]; then
+                echo -e "${RED}  Error: git sources must use an https:// URL and a ref that does not start with '-'${NC}"
+                exit 1
+            fi
+
             # Cache directory based on source name
             CLONE_DIR="$CACHE_DIR/$SOURCE_NAME"
 
             if [ "$DRY_RUN" = false ]; then
                 if [ -d "$CLONE_DIR/.git" ]; then
                     echo "  Updating cached clone..."
-                    git -C "$CLONE_DIR" fetch origin "$REPO_REF" --quiet 2>/dev/null
+                    git -C "$CLONE_DIR" fetch --quiet origin -- "$REPO_REF" 2>/dev/null
                     git -C "$CLONE_DIR" checkout "origin/$REPO_REF" --quiet 2>/dev/null || \
                         git -C "$CLONE_DIR" checkout "$REPO_REF" --quiet 2>/dev/null
                 else
                     echo "  Cloning $REPO_URL ($REPO_REF)..."
-                    git clone --depth 1 --branch "$REPO_REF" "$REPO_URL" "$CLONE_DIR" --quiet
+                    git clone --quiet --depth 1 --branch "$REPO_REF" -- "$REPO_URL" "$CLONE_DIR"
                 fi
             fi
 
@@ -158,6 +182,10 @@ for i in $(seq 0 $((SOURCE_COUNT - 1))); do
         src_pattern=$(jq -r ".sources[$i].map | keys[$mi]" "$MANIFEST")
         [ -z "$src_pattern" ] && continue
         dst_pattern=$(jq -r ".sources[$i].map[\"$src_pattern\"]" "$MANIFEST")
+        if ! safe_rel_path "$src_pattern" || ! safe_rel_path "$dst_pattern"; then
+            echo -e "${RED}  Error: map entries must be relative paths without '..': $src_pattern -> $dst_pattern${NC}"
+            exit 1
+        fi
         dst_full="$OUTPUT_DIR/$dst_pattern"
 
         if [ "$DRY_RUN" = true ]; then
@@ -178,12 +206,18 @@ for i in $(seq 0 $((SOURCE_COUNT - 1))); do
         if [[ "$src_pattern" == *'*'* ]]; then
             mkdir -p "$dst_full"
             file_count=0
-            # Expand glob safely using a subshell
-            while IFS= read -r f; do
-                [ -z "$f" ] && continue
-                cp -r "$f" "$dst_full"
+            # Expand the glob in-process inside the source dir (no bash -c, so
+            # nothing from the manifest or the path is ever parsed as code)
+            shopt -s nullglob
+            pushd "$SOURCE_DIR" > /dev/null
+            # shellcheck disable=SC2206
+            matches=( $src_pattern )
+            popd > /dev/null
+            shopt -u nullglob
+            for m in "${matches[@]}"; do
+                cp -R "$SOURCE_DIR/$m" "$dst_full"
                 file_count=$((file_count + 1))
-            done < <(bash -c "for f in $SOURCE_DIR/$src_pattern; do [ -e \"\$f\" ] && echo \"\$f\"; done" 2>/dev/null)
+            done
             echo -e "  ${GREEN}Copied $file_count items: $src_pattern -> $dst_pattern${NC}"
             continue
         fi
@@ -201,6 +235,16 @@ for i in $(seq 0 $((SOURCE_COUNT - 1))); do
 
     echo ""
 done
+
+# Fetched repositories must not smuggle symlinks into the committed output
+if [ "$DRY_RUN" = false ]; then
+    LINKS=$(find "$OUTPUT_DIR" -type l)
+    if [ -n "$LINKS" ]; then
+        echo -e "${RED}Error: symlinks found in build output (refusing to ship them):${NC}"
+        echo "$LINKS"
+        exit 1
+    fi
+fi
 
 # Generate README for the built plugin
 if [ "$DRY_RUN" = false ]; then

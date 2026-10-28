@@ -13,12 +13,17 @@ else
     exit 1
 fi
 
+# Percent-encode a value for use in a URL query string
+urlencode() {
+    printf '%s' "$1" | jq -sRr @uri
+}
+
 # Make a graph query API call
 graph_query() {
     local agent_id="$1"
     local query_type="$2"
     shift 2
-    local params="$@"
+    local params="$*"
 
     api_query "GET" "/api/agents/${agent_id}/graph/query?q=${query_type}${params}"
 }

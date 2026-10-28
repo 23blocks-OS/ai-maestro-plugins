@@ -321,6 +321,8 @@ if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
     # Save registration
     ensure_amp_dirs
 
+    # Create the file 0600 first: it holds the provider API key.
+    ( umask 077; : > "$REG_FILE" )
     jq -n \
         --arg provider "$PROVIDER_LOWER" \
         --arg apiUrl "$API_URL" \

@@ -47,7 +47,7 @@ echo "Finding all components of type: $TYPE"
 echo "---"
 
 # Make the query
-RESPONSE=$(graph_query "$AGENT_ID" "find-by-type" "&type=${TYPE}") || exit 1
+RESPONSE=$(graph_query "$AGENT_ID" "find-by-type" "&type=$(urlencode "$TYPE")") || exit 1
 
 # Extract and display results
 RESULT=$(echo "$RESPONSE" | jq '.result')
