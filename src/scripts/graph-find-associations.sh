@@ -31,7 +31,7 @@ echo "Finding associations for model: $NAME"
 echo "---"
 
 # Make the query
-RESPONSE=$(graph_query "$AGENT_ID" "find-associations" "&name=${NAME}") || exit 1
+RESPONSE=$(graph_query "$AGENT_ID" "find-associations" "&name=$(urlencode "$NAME")") || exit 1
 
 # Extract and display results
 RESULT=$(echo "$RESPONSE" | jq '.result')

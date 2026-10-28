@@ -32,7 +32,7 @@ echo "Describing: $NAME"
 echo "---"
 
 # Make the query
-RESPONSE=$(graph_query "$AGENT_ID" "describe" "&name=${NAME}") || exit 1
+RESPONSE=$(graph_query "$AGENT_ID" "describe" "&name=$(urlencode "$NAME")") || exit 1
 
 # Format output
 RESULT=$(echo "$RESPONSE" | jq '.result')

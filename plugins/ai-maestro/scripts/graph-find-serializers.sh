@@ -31,7 +31,7 @@ echo "Finding serializers for model: $NAME"
 echo "---"
 
 # Make the query
-RESPONSE=$(graph_query "$AGENT_ID" "find-serializers" "&name=${NAME}") || exit 1
+RESPONSE=$(graph_query "$AGENT_ID" "find-serializers" "&name=$(urlencode "$NAME")") || exit 1
 
 # Extract and display results
 RESULT=$(echo "$RESPONSE" | jq '.result')

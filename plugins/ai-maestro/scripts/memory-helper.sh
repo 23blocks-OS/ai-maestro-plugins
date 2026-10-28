@@ -17,7 +17,7 @@ fi
 memory_query() {
     local agent_id="$1"
     shift
-    local params="$@"
+    local params="$*"
 
     api_query "GET" "/api/agents/${agent_id}/search?${params}"
 }
@@ -26,7 +26,7 @@ memory_query() {
 memory_recall() {
     local agent_id="$1"
     shift
-    local params="$@"
+    local params="$*"
 
     api_query "GET" "/api/agents/${agent_id}/memory/recall?${params}"
 }
@@ -35,7 +35,7 @@ memory_recall() {
 memory_entity() {
     local agent_id="$1"
     shift
-    local params="$@"
+    local params="$*"
 
     api_query "GET" "/api/agents/${agent_id}/memory/entity?${params}"
 }
