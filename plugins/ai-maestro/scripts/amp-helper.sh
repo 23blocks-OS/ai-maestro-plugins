@@ -369,8 +369,11 @@ ensure_amp_dirs() {
     mkdir -p "${AMP_REGISTRATIONS_DIR}"
     mkdir -p "${AMP_ATTACHMENTS_DIR}"
 
-    # Secure permissions for keys and attachments directories
+    # Secure permissions: the agent dir holds messages, the registrations dir
+    # holds provider API keys, and keys/attachments hold the rest.
+    chmod 700 "${AMP_DIR}" 2>/dev/null || true
     chmod 700 "${AMP_KEYS_DIR}"
+    chmod 700 "${AMP_REGISTRATIONS_DIR}" 2>/dev/null || true
     chmod 700 "${AMP_ATTACHMENTS_DIR}"
 }
 
@@ -876,7 +879,9 @@ generate_keypair() {
     local public_key="${AMP_KEYS_DIR}/public.pem"
 
     # Generate private key
-    $OPENSSL_BIN genpkey -algorithm Ed25519 -out "${private_key}" 2>/dev/null
+    # umask 077 so the key is never world-readable, not even for the instant
+    # between creation and the chmod below.
+    ( umask 077; $OPENSSL_BIN genpkey -algorithm Ed25519 -out "${private_key}" 2>/dev/null )
     chmod 600 "${private_key}"
 
     # Extract public key
@@ -912,12 +917,15 @@ generate_keypair_to() {
     local target_dir="$1"
     require_openssl
     mkdir -p "$target_dir"
+    chmod 700 "$target_dir"
 
     local private_key="${target_dir}/private.pem"
     local public_key="${target_dir}/public.pem"
 
     # Generate private key
-    $OPENSSL_BIN genpkey -algorithm Ed25519 -out "${private_key}" 2>/dev/null
+    # umask 077 so the key is never world-readable, not even for the instant
+    # between creation and the chmod below.
+    ( umask 077; $OPENSSL_BIN genpkey -algorithm Ed25519 -out "${private_key}" 2>/dev/null )
     chmod 600 "${private_key}"
 
     # Extract public key
@@ -1208,6 +1216,13 @@ validate_message_id() {
     return 0
 }
 
+# Looser id check used before an id becomes a file name: the local
+# msg_<ts>_<hex> form or a provider-assigned token such as a UUID.
+# Same pattern amp-fetch.sh accepts.
+is_safe_message_id() {
+    [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]{3,63}$ ]]
+}
+
 # Create AMP message envelope
 # Args: to, subject, body, type, priority, in_reply_to, context, thread_id
 create_message() {
@@ -1324,9 +1339,16 @@ save_to_inbox() {
     local from=$(echo "$message_json" | jq -r '.envelope.from')
     local sender_dir=$(sanitize_address_for_path "$from")
 
+    # The id becomes a file name. It comes from the sender, so refuse anything
+    # that is not a plain token (no slashes, dots or leading dash).
+    if ! is_safe_message_id "$id"; then
+        echo "Error: Refusing to store message with unsafe id" >&2
+        return 1
+    fi
+
     # Replay protection (Section 07: Recipients MUST track message IDs)
     local replay_db="${AMP_DIR}/replay_db"
-    if [ -f "$replay_db" ] && grep -qF "${id}" "$replay_db" 2>/dev/null; then
+    if [ -f "$replay_db" ] && grep -qF -- "${id}|" "$replay_db" 2>/dev/null; then
         echo "Warning: Replay detected - message ${id} already received, skipping" >&2
         return 1
     fi
@@ -1381,7 +1403,8 @@ save_to_inbox() {
     # Prune replay_db entries older than 24 hours (best-effort)
     if [ -f "$replay_db" ]; then
         local _cutoff=$(( $(date +%s) - 86400 ))
-        local _tmp_db="${replay_db}.tmp.$$"
+        local _tmp_db
+        _tmp_db=$(mktemp "${replay_db}.tmp.XXXXXX") || _tmp_db="${replay_db}.tmp.$$"
         awk -F'|' -v c="$_cutoff" '$2+0 >= c' "$replay_db" > "$_tmp_db" 2>/dev/null && mv "$_tmp_db" "$replay_db" || rm -f "$_tmp_db"
     fi
 
@@ -1397,6 +1420,11 @@ save_to_sent() {
     local id=$(echo "$message_json" | jq -r '.envelope.id')
     local to=$(echo "$message_json" | jq -r '.envelope.to')
     local recipient_dir=$(sanitize_address_for_path "$to")
+
+    if ! is_safe_message_id "$id"; then
+        echo "Error: Refusing to store message with unsafe id" >&2
+        return 1
+    fi
 
     # Create recipient subdirectory
     local sent_recipient_dir="${AMP_SENT_DIR}/${recipient_dir}"
@@ -1865,7 +1893,8 @@ detect_mime_type() {
 # Returns: ISO 8601 timestamp or empty string on failure
 compute_expiry_date() {
     local days="${1:-7}"
-    date -u -v+${days}d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+    [[ "$days" =~ ^[0-9]+$ ]] || days=7
+    date -u -v+"${days}"d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
         || date -u -d "+${days} days" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
         || gdate -u -d "+${days} days" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
         || python3 -c "from datetime import datetime,timedelta;print((datetime.utcnow()+timedelta(days=${days})).strftime('%Y-%m-%dT%H:%M:%SZ'))" 2>/dev/null \
@@ -2305,12 +2334,18 @@ download_attachment() {
         if [[ "$download_url" == http://* ]]; then
             echo "Warning: Downloading over HTTP (not HTTPS). Connection is not encrypted." >&2
         fi
+        # The URL comes from the message (untrusted): it must be http(s), which
+        # also keeps it from being read as a curl option.
+        if [[ ! "$download_url" =~ ^https?:// ]]; then
+            echo "Error: Attachment URL must start with http:// or https://" >&2
+            return 1
+        fi
         local dl_response
         dl_response=$(curl -s -w "\n%{http_code}" --connect-timeout 10 --max-time 120 \
             --max-filesize "$AMP_MAX_ATTACHMENT_SIZE" \
-            --max-redirs 3 --proto '=https,http' \
+            --max-redirs 3 --proto '=https,http' --proto-redir '=https,http' \
             -C - \
-            -o "$dest_path" "$download_url" 2>&1)
+            -o "$dest_path" --url "$download_url" 2>&1)
         dl_http=$(echo "$dl_response" | tail -n1)
     elif [ -n "$api_url" ] && [ "$api_url" != "null" ] && [ -n "$api_key" ] && [ "$api_key" != "null" ]; then
         local dl_response

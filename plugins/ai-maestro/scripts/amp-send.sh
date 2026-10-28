@@ -682,6 +682,8 @@ if [ "$ROUTE" = "local" ]; then
                     ensure_amp_dirs
                     REG_FILE="${AMP_REGISTRATIONS_DIR}/${AUTO_PROVIDER_NAME}.json"
 
+                    # Create the file 0600 first: it holds the provider API key.
+                    ( umask 077; : > "$REG_FILE" )
                     jq -n \
                         --arg provider "$AUTO_PROVIDER_NAME" \
                         --arg apiUrl "${AUTO_PROVIDER_ENDPOINT:-${AMP_MAESTRO_URL}/api/v1}" \

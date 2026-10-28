@@ -530,6 +530,8 @@ if [ "$_DO_FRESH_REGISTRATION" = true ]; then
             ensure_amp_dirs
             REG_FILE="${AMP_REGISTRATIONS_DIR}/${REG_PROVIDER_NAME}.json"
 
+            # Create the file 0600 first: it holds the provider API key.
+            ( umask 077; : > "$REG_FILE" )
             jq -n \
                 --arg provider "$REG_PROVIDER_NAME" \
                 --arg apiUrl "${REG_PROVIDER_ENDPOINT:-${AMP_MAESTRO_URL}/api/v1}" \

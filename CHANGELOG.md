@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [1.18.3] - 2026-10-28
 
+- Rebuilt on 2026-10-28 so the bundled output includes the security fixes merged upstream the same day: AMP plugin 0.5.2 (message ids checked before they become file names, private keys and registration files created owner-only, attachment URLs not read as curl options) and the agentic-sql write-list fix (1.4.1).
+
 ### Security: review and updates, 2026-10-28
 - `build-plugin.sh`: manifest values can no longer write outside the output directory or read outside a source. Source names must match `[A-Za-z0-9._-]+`; local source paths and every `map` entry (source and destination) are rejected if absolute or containing `..`; git sources must use `https://` and a ref that does not start with `-`; `git clone`/`fetch` now pass `--` before user-supplied values.
 - `build-plugin.sh`: the glob expansion no longer runs `bash -c` with the source path and map key pasted into the command string (a path or key with shell metacharacters was parsed as code). Globs now expand in-process with `nullglob`.

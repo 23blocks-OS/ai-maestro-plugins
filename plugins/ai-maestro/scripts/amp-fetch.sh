@@ -221,9 +221,11 @@ for provider in "${PROVIDERS[@]}"; do
             fi
 
             # Trust messages relayed through our registered provider
-            if [ "$msg_from_provider" = "$provider" ] || \
-               [[ "$provider" == *".$msg_from_provider" ]] || \
-               [[ "$msg_from_provider" == *".$provider" ]]; then
+            # (an empty provider on either side never counts as a match)
+            if [ -n "$msg_from_provider" ] && [ -n "$provider" ] && \
+               { [ "$msg_from_provider" = "$provider" ] || \
+                 [[ "$provider" == *".$msg_from_provider" ]] || \
+                 [[ "$msg_from_provider" == *".$provider" ]]; }; then
                 sig_valid="true"
             elif [ -n "$signature" ]; then
                 # Different provider or unknown: attempt local verification
