@@ -3,6 +3,13 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.18.5] - 2026-10-28
+
+- `aimaestro-agent.sh create` no longer writes `mcp__*` into the `allow` list of `.claude/settings.local.json`. Claude Code 2.1.x rejects that entry ("Wildcard tool name mcp__* is not supported in allow rules") and shows a settings dialog at start-up that stops an unattended agent. Every other default is unchanged.
+- New `aimaestro-agent.sh create --permissions <profile>`. `full` (default) is the previous set of pre-approved tools. `messaging` allows Read, Glob, Grep and the `amp-inbox`, `amp-read`, `amp-reply`, `amp-send` and `amp-status` scripts only (no wildcard Bash), and denies Write, Edit, NotebookEdit, WebFetch, WebSearch and Task, for agents that answer people from a chat gateway and must not have a shell or file writes. An unknown value is rejected with the list of valid ones.
+- The settings file is now written with jq and merged: an existing `env` (or any other key) is kept, only `permissions` is replaced; a file that is not valid JSON is left alone. `update` has no `--permissions` because it only patches the registry and never touches the agent folder.
+- Added `tests/permission-profiles.bats`.
+
 ## [1.18.4] - 2026-10-28
 
 - `aimaestro-agent.sh create --program` now accepts every program the AI Maestro server resolves: `openclaw`, `grok`, `pi` (`pi-agent`, `pi-coding-agent`) and `copilot` (`copilot-cli`, `github-copilot`, `github-copilot-cli`), alongside the existing names and `none`/`terminal`. `--program pi` was rejected with "Invalid program". The help text lists them. Added `tests/allowed-programs.bats`.

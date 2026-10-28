@@ -329,7 +329,7 @@ is_allowed_program() {
 }
 
 cmd_create() {
-    local name="" dir="" program="claude-code" model="" task="" tags="" trust_level=""
+    local name="" dir="" program="claude-code" model="" task="" tags="" trust_level="" permissions="full"
     local no_session=false no_folder=false force_folder=false
     local -a program_args=()  # Arguments to pass to the program (after --)
 
@@ -353,6 +353,9 @@ cmd_create() {
             -T|--trust-level)
                 [[ $# -lt 2 ]] && { print_error "-T/--trust-level requires a value"; return 1; }
                 trust_level="$2"; shift 2 ;;
+            --permissions)
+                [[ $# -lt 2 ]] && { print_error "--permissions requires a value"; return 1; }
+                permissions="$2"; shift 2 ;;
             --no-session) no_session=true; shift ;;
             --no-folder) no_folder=true; shift ;;
             --force-folder) force_folder=true; shift ;;
@@ -375,6 +378,10 @@ Options:
   -t, --task <desc>      Task description
   --tags <t1,t2>         Comma-separated tags
   -T, --trust-level <l>  Trust level (supervised|planOnly|trustEdits|smartAuto|fullAutonomy)
+  --permissions <p>      Tool permissions written to .claude/settings.local.json
+                         (default: full). full = Bash, file tools, web and subagents
+                         pre-approved. messaging = read-only plus the amp-*.sh scripts;
+                         no shell, no file writes, no web, no subagents.
   --no-session           Don't create tmux session
   --no-folder            Don't create project folder
   --force-folder         Use existing directory (by default, errors if exists)
@@ -392,6 +399,9 @@ Examples:
 
   # Create agent using existing folder
   aimaestro-agent.sh create existing-project --dir ~/Code/old-project --force-folder
+
+  # Create an agent that can only read and use the AMP scripts (no shell, no writes)
+  aimaestro-agent.sh create gateway-bot --dir ~/Code/gateway-bot --permissions messaging
 
   # Create agent with tags
   aimaestro-agent.sh create utils-agent --dir ~/Code/utils --tags "utils,tools"
@@ -423,6 +433,13 @@ HELP
     if ! is_allowed_program "$program"; then
         print_error "Invalid program: $program"
         print_error "Allowed programs: $AIMAESTRO_ALLOWED_PROGRAMS"
+        return 1
+    fi
+
+    # Validate permissions profile
+    if [[ ! " $AIMAESTRO_PERMISSION_PROFILES " =~ [[:space:]]"${permissions}"[[:space:]] ]]; then
+        print_error "Invalid permissions profile: $permissions"
+        print_error "Valid profiles: $AIMAESTRO_PERMISSION_PROFILES"
         return 1
     fi
 
@@ -480,7 +497,7 @@ HELP
             print_error "Failed to create directory: $dir"
             return 1
         fi
-        create_project_template "$dir" "$name"
+        create_project_template "$dir" "$name" "$permissions"
     fi
 
     # Build JSON payload
