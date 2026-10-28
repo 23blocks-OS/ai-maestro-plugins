@@ -311,6 +311,23 @@ cmd_show() {
 # CREATE
 # ============================================================================
 
+# Program names the server resolves (lib/program-names.ts in ai-maestro), plus
+# "none" and "terminal" (open a shell, launch nothing). Keep in step with the
+# server: a name missing here is rejected before the request is sent.
+AIMAESTRO_ALLOWED_PROGRAMS="claude-code claude codex aider cursor gemini opencode openclaw grok pi pi-agent pi-coding-agent copilot copilot-cli github-copilot github-copilot-cli none terminal"
+
+# Succeeds when $1 (case-insensitive) is an allowed program name.
+is_allowed_program() {
+    local program_lower
+    # Portable lowercase — see agent-helper.sh. On macOS's bash 3.2 the bash-4
+    # ${var,,} form errored, program_lower stayed empty, the whitelist test
+    # failed, and `aimaestro-agent.sh create` aborted with "Invalid program:
+    # claude" for a perfectly valid program. This is the line that broke agent
+    # creation on the MacBook.
+    program_lower=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+    [[ " $AIMAESTRO_ALLOWED_PROGRAMS " =~ [[:space:]]"${program_lower}"[[:space:]] ]]
+}
+
 cmd_create() {
     local name="" dir="" program="claude-code" model="" task="" tags="" trust_level=""
     local no_session=false no_folder=false force_folder=false
@@ -350,7 +367,10 @@ Usage: aimaestro-agent.sh create <name> --dir <path> [options] [-- <program-args
 
 Options:
   -d, --dir <path>       Working directory (REQUIRED - must be full path)
-  -p, --program <prog>   Program to run (default: claude-code)
+  -p, --program <prog>   Program to run (default: claude-code). One of: claude-code, claude,
+                         codex, aider, cursor, gemini, opencode, openclaw, grok, pi
+                         (pi-agent, pi-coding-agent), copilot (copilot-cli, github-copilot,
+                         github-copilot-cli), none, terminal. none/terminal open a shell only.
   -m, --model <model>    AI model (e.g., claude-sonnet-4)
   -t, --task <desc>      Task description
   --tags <t1,t2>         Comma-separated tags
@@ -400,17 +420,9 @@ HELP
     fi
 
     # Validate program - must be in whitelist
-    local allowed_programs="claude-code claude codex aider cursor gemini opencode none terminal"
-    # Portable lowercase — see agent-helper.sh. On macOS's bash 3.2 the bash-4
-    # ${var,,} form errored, program_lower stayed empty, the whitelist test
-    # failed, and `aimaestro-agent.sh create` aborted with "Invalid program:
-    # claude" for a perfectly valid program. This is the line that broke agent
-    # creation on the MacBook.
-    local program_lower
-    program_lower=$(printf '%s' "$program" | tr '[:upper:]' '[:lower:]')
-    if [[ ! " $allowed_programs " =~ [[:space:]]"${program_lower}"[[:space:]] ]]; then
+    if ! is_allowed_program "$program"; then
         print_error "Invalid program: $program"
-        print_error "Allowed programs: $allowed_programs"
+        print_error "Allowed programs: $AIMAESTRO_ALLOWED_PROGRAMS"
         return 1
     fi
 

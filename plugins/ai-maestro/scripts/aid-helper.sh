@@ -302,7 +302,7 @@ generate_keypair() {
     local private_key="${keys_dir}/private.pem"
     local public_key="${keys_dir}/public.pem"
 
-    $OPENSSL_BIN genpkey -algorithm Ed25519 -out "${private_key}" 2>/dev/null
+    ( umask 077; $OPENSSL_BIN genpkey -algorithm Ed25519 -out "${private_key}" 2>/dev/null )
     chmod 600 "${private_key}"
 
     $OPENSSL_BIN pkey -in "${private_key}" -pubout -out "${public_key}" 2>/dev/null

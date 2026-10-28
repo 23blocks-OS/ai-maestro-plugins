@@ -177,6 +177,7 @@ fi
 
 AID_CACHE_DIR="${AMP_DIR}/tokens"
 mkdir -p "$AID_CACHE_DIR"
+chmod 700 "$AID_CACHE_DIR" 2>/dev/null || true
 
 # Derive cache key from auth URL + credential_type + audience (so api_key and access_token
 # requests, or tokens meant for different services, never collide on disk).
@@ -233,7 +234,11 @@ save_cache() {
     local expires_at
     expires_at=$(( $(date +%s) + expires_in ))
 
-    echo "$response" | jq --arg ea "$expires_at" '. + {expires_at: ($ea | tonumber), auth_server: "'"$AUTH_URL"'"}' \
+    # The auth URL goes in as a jq argument, never spliced into the program text.
+    # The file is created 0600 before the token is written to it.
+    ( umask 077; : > "$cache_file" )
+    echo "$response" | jq --arg ea "$expires_at" --arg au "$AUTH_URL" \
+        '. + {expires_at: ($ea | tonumber), auth_server: $au}' \
         > "$cache_file"
     chmod 600 "$cache_file"
 }
