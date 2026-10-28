@@ -3,6 +3,10 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.18.4] - 2026-10-28
+
+- `aimaestro-agent.sh create --program` now accepts every program the AI Maestro server resolves: `openclaw`, `grok`, `pi` (`pi-agent`, `pi-coding-agent`) and `copilot` (`copilot-cli`, `github-copilot`, `github-copilot-cli`), alongside the existing names and `none`/`terminal`. `--program pi` was rejected with "Invalid program". The help text lists them. Added `tests/allowed-programs.bats`.
+
 ## [1.18.3] - 2026-10-28
 
 - Rebuilt on 2026-10-28 so the bundled output includes the security fixes merged upstream the same day: AMP plugin 0.5.2 (message ids checked before they become file names, private keys and registration files created owner-only, attachment URLs not read as curl options) and the agentic-sql write-list fix (1.4.1).
