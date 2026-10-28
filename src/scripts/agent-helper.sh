@@ -268,6 +268,84 @@ list_agents() {
 }
 
 # ============================================================================
+# Permission profiles (.claude/settings.local.json)
+# ============================================================================
+
+AIMAESTRO_PERMISSION_PROFILES="full messaging"
+
+# Print the Claude Code "permissions" object for a profile.
+#   full       pre-approved tools so autonomous coding agents never stop for approval
+#   messaging  read-only plus the AMP scripts; no shell, no writes, no web, no subagents
+# Note: "mcp__*" is not a valid allow rule in current Claude Code, so it is not listed.
+permission_profile_json() {
+    case "${1:-}" in
+        full)
+            jq -n '{allow: ["Bash(*)", "Read(*)", "Write(*)", "Edit(*)", "Glob(*)", "Grep(*)",
+                            "WebFetch(*)", "WebSearch(*)", "Task(*)"]}' ;;
+        messaging)
+            jq -n '[ "amp-inbox", "amp-read", "amp-reply", "amp-send", "amp-status" ] as $amp
+                | {allow: (["Read", "Glob", "Grep"]
+                           + [$amp[] | "Bash(\(.).sh:*)"]
+                           + [$amp[] | "Bash(\(.):*)"]),
+                   deny: ["Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Task"]}' ;;
+        *)
+            print_error "Invalid permissions profile: ${1:-}"
+            print_error "Valid profiles: $AIMAESTRO_PERMISSION_PROFILES"
+            return 1 ;;
+    esac
+}
+
+# Write the permissions block into <dir>/.claude/settings.local.json.
+# Merge-friendly: every other key (for example "env", written by AI Maestro) is
+# kept; only "permissions" is replaced. An existing file that is not valid JSON
+# is left alone and reported.
+# Args: dir [profile]  (profile defaults to full)
+write_agent_permissions() {
+    local dir="${1:-}"
+    local profile="${2:-full}"
+
+    if [[ -z "$dir" ]]; then
+        print_error "Directory path is required"
+        return 1
+    fi
+
+    local perms
+    perms=$(permission_profile_json "$profile") || return 1
+
+    mkdir -p "$dir/.claude" || {
+        print_error "Failed to create directory: $dir/.claude"
+        return 1
+    }
+
+    local target="$dir/.claude/settings.local.json"
+    local base="{}"
+    if [[ -s "$target" ]]; then
+        base=$(jq -e 'if type == "object" then . else error("not an object") end' "$target" 2>/dev/null) || {
+            print_error "Existing $target is not a JSON object; leaving it unchanged"
+            return 1
+        }
+    fi
+
+    local tmp_settings
+    tmp_settings=$(mktemp) || {
+        print_error "Failed to create temp file for settings.local.json"
+        return 1
+    }
+
+    if ! printf '%s' "$base" | jq --argjson p "$perms" '. + {permissions: $p}' > "$tmp_settings"; then
+        rm -f "$tmp_settings"
+        print_error "Failed to write settings.local.json content"
+        return 1
+    fi
+
+    mv "$tmp_settings" "$target" || {
+        rm -f "$tmp_settings"
+        print_error "Failed to create .claude/settings.local.json"
+        return 1
+    }
+}
+
+# ============================================================================
 # Project Template Functions
 # ============================================================================
 
@@ -277,6 +355,7 @@ list_agents() {
 create_project_template() {
     local dir="${1:-}"
     local name="${2:-}"
+    local permissions="${3:-full}"
 
     if [[ -z "$dir" ]]; then
         print_error "Directory path is required"
@@ -326,44 +405,8 @@ create_project_template() {
         return 1
     }
 
-    # Write .claude/settings.local.json with pre-approved tool permissions
-    # so agents created by AI Maestro don't require manual tool approval (Issue #223)
-    local tmp_settings
-    tmp_settings=$(mktemp) || {
-        print_error "Failed to create temp file for settings.local.json"
-        return 1
-    }
-
-    cat > "$tmp_settings" << 'SETTINGS'
-{
-  "permissions": {
-    "allow": [
-      "Bash(*)",
-      "Read(*)",
-      "Write(*)",
-      "Edit(*)",
-      "Glob(*)",
-      "Grep(*)",
-      "WebFetch(*)",
-      "WebSearch(*)",
-      "Task(*)",
-      "mcp__*"
-    ]
-  }
-}
-SETTINGS
-    # shellcheck disable=SC2181
-    if [[ $? -ne 0 ]]; then
-        rm -f "$tmp_settings"
-        print_error "Failed to write settings.local.json content"
-        return 1
-    fi
-
-    mv "$tmp_settings" "$canonical_dir/.claude/settings.local.json" || {
-        rm -f "$tmp_settings"
-        print_error "Failed to create .claude/settings.local.json"
-        return 1
-    }
+    # Write .claude/settings.local.json with the permission profile (Issue #223)
+    write_agent_permissions "$canonical_dir" "$permissions" || return 1
 
     # HIGH-1/HIGH-2: Use atomic write pattern - write to temp file first, then mv
     local tmp_claude tmp_gitignore
