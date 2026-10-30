@@ -4,7 +4,7 @@
 # push. It is signalling only: the person sees who is calling and answers or declines; there is no
 # audio yet. Use it when a person must act now and a message would wait; otherwise send a message.
 #
-# Version: 1.0.0
+# Version: 1.0.1
 set -u -o pipefail
 
 API="${AIMAESTRO_API:-http://localhost:23000}"
@@ -71,7 +71,7 @@ host_bases() {
   echo "$API"
   curl -sS -m 4 "$API/api/hosts" 2>/dev/null \
     | jq -r '.hosts[]? | select(.enabled != false) | select((.isSelf // false) | not) | .url // empty' 2>/dev/null \
-    | sed 's:/*$::'
+    | sed 's:/*$::' || true
 }
 
 # Every active person on every reachable host, one JSON object per line (first host wins on duplicates)
@@ -79,7 +79,7 @@ all_people() {
   local base
   host_bases | while read -r base; do
     [ -n "$base" ] || continue
-    curl -sS -m 4 "$base/api/people" 2>/dev/null | jq -c '.people[]? | select(.active != false) | {id, displayName, email, hostId}' 2>/dev/null
+    curl -sS -m 4 "$base/api/people" 2>/dev/null | jq -c '.people[]? | select(.active != false) | {id, displayName, email, hostId}' 2>/dev/null || true
   done | jq -s -c 'unique_by(.id)[]'
 }
 
@@ -89,7 +89,7 @@ can_ring() {
   host_bases | while read -r base; do
     [ -n "$base" ] || continue
     curl -sS -m 4 "$base/api/people-devices?personId=$pid" 2>/dev/null \
-      | jq -r '.devices[]? | select(.pushEnabled == true and ((.pushTypes // []) | index("call"))) | "yes"' 2>/dev/null
+      | jq -r '.devices[]? | select(.pushEnabled == true and ((.pushTypes // []) | index("call"))) | "yes"' 2>/dev/null || true
   done | head -1
 }
 
