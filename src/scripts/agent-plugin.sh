@@ -187,7 +187,8 @@ HELP
             [[ -d "$check_dir" ]] && [[ -f "$check_dir/SKILL.md" ]] && plugin_skill_dirs+=("$check_dir")
         done
 
-        for scan_dir in "${plugin_skill_dirs[@]}"; do
+        # ${arr[@]+...}: an empty array under set -u is an error in bash 3.2 (macOS /bin/bash)
+        for scan_dir in ${plugin_skill_dirs[@]+"${plugin_skill_dirs[@]}"}; do
             if ! scan_skill_security "$scan_dir" "$plugin"; then
                 print_error "Plugin contains a skill with critical security issues."
                 print_error "Uninstalling plugin '$plugin'..."
