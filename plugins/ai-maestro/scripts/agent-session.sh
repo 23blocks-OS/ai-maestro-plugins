@@ -282,7 +282,7 @@ cmd_wake() {
         if [[ -n "$session_name" ]] && validate_tmux_session_name "$session_name"; then
             print_info "Attaching to session..."
             # Use -- to separate options from arguments
-            tmux attach-session -t -- "$session_name"
+            tmux attach-session -t "=${session_name}:"
         elif [[ -n "$session_name" ]]; then
             print_error "Invalid tmux session name format"
             return 1

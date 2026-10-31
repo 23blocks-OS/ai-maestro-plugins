@@ -845,8 +845,8 @@ HELP
         # CRITICAL-2: Validate tmux session names before use to prevent command injection
         if [[ -n "$session_name" ]] && validate_tmux_session_name "$session_name"; then
             # Use -- to separate options from arguments
-            if tmux has-session -t -- "$session_name" 2>/dev/null; then
-                tmux rename-session -t -- "$session_name" "$new_name"
+            if tmux has-session -t "=${session_name}:" 2>/dev/null; then
+                tmux rename-session -t "=${session_name}:" "$new_name"
                 print_info "Renamed tmux session: $session_name -> $new_name"
             fi
         elif [[ -n "$session_name" ]]; then
