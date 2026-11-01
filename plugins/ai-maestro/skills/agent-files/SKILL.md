@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires curl 7.75 or newer, jq, openssl and shasum or sha256sum. Works on bash 3.2 (macOS) and Linux. A reachable S3-compatible store configured as a space.
 metadata:
   version: "0.1.0"
-  homepage: "https://github.com/agentmessaging/agent-files"
+  homepage: "https://agentfiles.org"
   repository: "https://github.com/agentmessaging/agent-files"
 ---
 
