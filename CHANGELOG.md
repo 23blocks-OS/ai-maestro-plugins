@@ -3,6 +3,10 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.19.6] - 2026-11-02
+
+- `ai-maestro-hook.cjs`: when several agents share a session's folder, the hook links the session to none of them, as before, but now says so. On start it shows a one-line notice that names the agents and how to start the session as one of them (`AIM_AGENT_NAME=<name> claude --continue`). Deleted agents no longer count when the hook matches a session to an agent by folder. Matching stays exact: a session in a subfolder is not linked (ai-maestro #758).
+
 ## [1.18.5] - 2026-10-28
 
 - `aimaestro-agent.sh create` no longer writes `mcp__*` into the `allow` list of `.claude/settings.local.json`. Claude Code 2.1.x rejects that entry ("Wildcard tool name mcp__* is not supported in allow rules") and shows a settings dialog at start-up that stops an unattended agent. Every other default is unchanged.
