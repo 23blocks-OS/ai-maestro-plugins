@@ -30,9 +30,9 @@ Commands:
   due <id> <YYYY-MM-DD>|none                                  Set, or clear, the date a card is due (the matrix sorts by it)
   owners <id> <agent>... | none                               Say who else owns a card (the card also shows on their boards); replaces the list, none clears it
   start <id>                                                  Move to In Progress
-  review <id>                                                 Move to Review
-  done <id>                                                   Move to Done
-  move <id> <status>                                          backlog | pending | in_progress | review | completed
+  review <id> [--result "<what was done>"]                    Move to Review, saying what was done
+  done <id> [--result "<what was done>"]                      Move to Done, saying what was done
+  move <id> <status> [--result "<text>"]                      backlog | pending | in_progress | review | completed
   wait <id> --on juan|outside|hold|<agent-id> [--note "<text>"]   Waiting, and on whom
   comment <id> "<text>"                                       Write on the card (stored and shown; never sent to anyone)
   place <id> q1|q2|q3|q4|none                                 Put a card on the Eisenhower matrix (none = take it off)
@@ -96,9 +96,9 @@ if [ "$CMD" = "schema" ]; then
     {"name": "due", "args": ["<id>", "<YYYY-MM-DD>|none"], "about": "Set or clear the date a card is due"},
     {"name": "owners", "args": ["<id>", "<agent>... | none"], "about": "Other owners of a card: it also shows on their boards. Replaces the list; none clears it. Nobody is notified."},
     {"name": "start", "args": ["<id>"], "about": "Move to In Progress"},
-    {"name": "review", "args": ["<id>"], "about": "Move to Review"},
-    {"name": "done", "args": ["<id>"], "about": "Move to Done"},
-    {"name": "move", "args": ["<id>", "<status>"], "about": "Move to backlog, pending, in_progress, review or completed"},
+    {"name": "review", "args": ["<id>"], "flags": ["--result <what was done>"], "about": "Move to Review; --result records what was actually done"},
+    {"name": "done", "args": ["<id>"], "flags": ["--result <what was done>"], "about": "Move to Done; --result records what was actually done"},
+    {"name": "move", "args": ["<id>", "<status>"], "flags": ["--result <text>"], "about": "Move to backlog, pending, in_progress, review or completed"},
     {"name": "wait", "args": ["<id>"], "flags": ["--on <who> (required)", "--note <text>"], "about": "Waiting, and on whom"},
     {"name": "comment", "args": ["<id>", "<text>"], "about": "Write on the card; never sent to anyone's prompt"},
     {"name": "place", "args": ["<id>", "<quadrant>"], "about": "Put a card on the Eisenhower matrix (none takes it off)"},
@@ -465,12 +465,19 @@ case "$CMD" in
       done) status=completed ;;
       move) status="${1:-}"; [ -n "$status" ] || die "move needs a status"; shift ;;
     esac
+    result=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --result) [ $# -ge 2 ] || die "--result needs a value"; result="$2"; shift 2 ;;
+        *) die "Unknown option: $1" ;;
+      esac
+    done
     [ "$status" != "waiting" ] || die "Use: wait <id> --on juan|outside|hold|<agent-id>"
     is_status "$status" || die "Unknown status '$status' (backlog, pending, in_progress, review, completed)"
     resolved=$(resolve "$id") || exit 1
     IFS='|' read -r scope team full hb pid <<< "$resolved"
-    update "$scope" "$team" "$full" "$hb" "$pid" "$(jq -n --arg s "$status" '{status:$s}')"
-    echo "$(short "$full")  ->  $status"
+    update "$scope" "$team" "$full" "$hb" "$pid" "$(jq -n --arg s "$status" --arg r "$result" '{status:$s} + (if $r != "" then {result:$r} else {} end)')"
+    echo "$(short "$full")  ->  $status$([ -n "$result" ] && echo "  (result recorded)")"
     ;;
 
   wait)

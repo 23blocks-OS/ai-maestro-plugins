@@ -15,8 +15,8 @@ The operator opens a Board tab for each agent: columns To Do, In Progress, Revie
 ```bash
 aimaestro-task.sh add "Ship the consent banner" [--desc "..."]   # you took a task on
 aimaestro-task.sh start <id>                                      # you began working on it
-aimaestro-task.sh review <id>                                     # it is waiting for someone to check it
-aimaestro-task.sh done <id>                                       # finished
+aimaestro-task.sh review <id> --result "what you actually did"   # it is waiting for someone to check it
+aimaestro-task.sh done <id> --result "what you actually did"     # finished
 aimaestro-task.sh wait <id> --on juan --note "needs the final copy"
 aimaestro-task.sh comment <id> "what you did, or what you need"
 aimaestro-task.sh due <id> 2026-10-31                             # the day it is due (none clears it); the matrix sorts by it
@@ -33,7 +33,7 @@ aimaestro-task.sh show <id>                                       # one card wit
 
 - A task is assigned or you pick one up: `add` (then `start` when you begin).
 - You stop because you need something: `wait` and say on whom: `juan` (the operator), `outside` (someone not on AI Maestro), `hold` (paused on purpose, nobody is blocking it), or another agent's id. Say what exactly in `--note`; it is the first thing the operator reads. `start` again when the wait is over.
-- The work is done and someone should look: `review`. Done and nothing more to do: `done`.
+- The work is done and someone should look: `review`. Done and nothing more to do: `done`. Give `--result` with either: what you actually did (what changed, where, how you checked it). The reviewer reads it instead of your chat.
 - Use `comment` for context about a task instead of sending a new message about it. Your comments stay on the card and are shown; they are not sent to anyone's prompt.
 
 ## Due dates and shared cards
