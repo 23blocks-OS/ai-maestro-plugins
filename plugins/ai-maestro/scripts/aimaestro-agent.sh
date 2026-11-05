@@ -19,6 +19,7 @@
 #   plugin      Manage Claude Code plugins for an agent
 #   export      Export agent to file
 #   import      Import agent from file
+#   doctor      Check this host's agents and install (--all: every host)
 #   help        Show this help
 #
 # Version: Sync with bump-version.sh - currently v1.0.2
@@ -99,6 +100,7 @@ main() {
         plugin)    shift; cmd_plugin "$@" ;;
         export)    shift; cmd_export "$@" ;;
         import)    shift; cmd_import "$@" ;;
+        doctor)    shift; cmd_doctor "$@" ;;
         help|--help|-h) cmd_help ;;
         --version|-v) echo "aimaestro-agent.sh v1.0.2" ;;
         *) print_error "Unknown command: $1"; echo ""; cmd_help; exit 1 ;;

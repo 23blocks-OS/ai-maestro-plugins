@@ -3,6 +3,14 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.19.8] - 2026-11-05
+
+- `aimaestro-agent.sh doctor [--all] [--json]` prints the Doctor report (ai-maestro F069 step 3): one line per check, failures first, its items named by agent and its hint. `--all` asks every enabled host in the hosts list for its own report. Exit code 1 when a check fails or a host does not answer. Fixes stay in Settings → Doctor.
+
+## [1.19.7] - 2026-11-05
+
+- `aimaestro-task.sh start|review|done|move … --result "…"` records what was actually done on the card (ai-maestro F077, #776). The agent-tasks skill says when to use it.
+
 ## [1.19.6] - 2026-11-02
 
 - `ai-maestro-hook.cjs`: when several agents share a session's folder, the hook links the session to none of them, as before, but now says so. On start it shows a one-line notice that names the agents and how to start the session as one of them (`AIM_AGENT_NAME=<name> claude --continue`). Deleted agents no longer count when the hook matches a session to an agent by folder. Matching stays exact: a session in a subfolder is not linked (ai-maestro #758).

@@ -1,6 +1,6 @@
 ---
 name: ai-maestro-agents-management
-description: Creates, manages, and orchestrates AI agents using the AI Maestro CLI. Use when the user asks to "create agent", "list agents", "delete agent", "rename agent", "hibernate agent", "wake agent", "install plugin", "show agent", "export agent", "restart agent", "install marketplace", or any agent lifecycle management task.
+description: Creates, manages, and orchestrates AI agents using the AI Maestro CLI. Use when the user asks to "create agent", "list agents", "delete agent", "rename agent", "hibernate agent", "wake agent", "install plugin", "show agent", "export agent", "restart agent", "install marketplace", "run doctor" or "check agent health", or any agent lifecycle management task.
 allowed-tools: Bash
 compatibility: Requires AI Maestro (aimaestro.dev) with Bash shell access
 metadata:
@@ -72,6 +72,14 @@ aimaestro-agent.sh skill remove <agent> <skill-id>
 aimaestro-agent.sh export <agent> [-o <file>]             # default <agent>.agent.json, configuration only
 aimaestro-agent.sh import <file> [--name <new-name>] [--dir <new-dir>]
 ```
+
+## Health check
+
+```bash
+aimaestro-agent.sh doctor [--all] [--json]   # this host's checks (agents, install, peers); --all: every enabled host
+```
+
+It exits 1 when a check fails. Fixes are offered in Settings → Doctor, not by the CLI.
 
 ## Troubleshooting
 

@@ -35,6 +35,7 @@ Commands:
   plugin <subcommand>           Manage Claude Code plugins
   export <agent>                Export agent to file
   import <file>                 Import agent from file
+  doctor                        Check this host's agents and install (--all: every host)
   help                          Show this help
 
 Examples:
@@ -57,6 +58,110 @@ Examples:
 
 Run 'aimaestro-agent.sh <command> --help' for command-specific help.
 EOF
+}
+
+# ============================================================================
+# DOCTOR (AI Maestro F069 step 3; the report is docs/SPEC-DOCTOR.md contract v2)
+# ============================================================================
+
+# Prints one host's report: a line per check, failures first, its items indented and its hint.
+# Args: report-json. Returns 1 when a check fails.
+_doctor_print() {
+    local report="$1" status text pre post
+    # Fields are split on \x1f (not tab: jq's @tsv escapes backslashes, and tab is whitespace to `read`, so an
+    # empty field would shift the next). Text is printed with %s, so a backslash in a path stays as written.
+    printf '%b%s%b\n' "$BOLD" "$(jq -r '"\(.hostname // "?") · v\(.version // "?") · \(.summary.passed // 0) passed, \(.summary.warnings // 0) warnings, \(.summary.failed // 0) failed"' <<<"$report")" "$NC"
+    while IFS=$'\x1f' read -r status text; do
+        post="$NC"
+        case "$status" in
+            pass) pre="  ${GREEN}✓${NC} " ;;
+            warn) pre="  ${YELLOW}!${NC} " ;;
+            fail) pre="  ${RED}✗${NC} " ;;
+            item-pass) pre="      " ;;
+            item-warn) pre="      ${YELLOW}" ;;
+            item-fail) pre="      ${RED}" ;;
+            hint) pre="      ${BLUE}→ " ;;
+            *) continue ;;
+        esac
+        printf '%b%s%b\n' "$pre" "$text" "$post"
+    done < <(jq -r '
+        def rank: if . == "fail" then 0 elif . == "warn" then 1 else 2 end;
+        def line($s; $t): $s + "\u001f" + ($t | tostring | gsub("[\n\r\t\u001f]"; " "));
+        (.checks // []) | sort_by(.status | rank) | .[] |
+          line(.status; "\(.name): \(.message)"),
+          ((.items // [])[] | line("item-" + .status; (.agentName as $n | if $n and (.message | contains($n) | not) then "\($n): \(.message)" else .message end))),
+          (if .status != "pass" and .hint then line("hint"; .hint) else empty end)
+    ' <<<"$report")
+    [[ "$(jq -r '[.checks[]? | select(.status == "fail")] | length' <<<"$report")" == "0" ]]
+}
+
+# Args: base-url. Prints the report JSON, or returns 1 when the host does not answer with one.
+_doctor_fetch() {
+    local body
+    # A run can take ~20 s (agent-programs waits up to 8 s for a hung program)
+    body=$(curl -s --max-time 60 "$1/api/diagnostics") || return 1
+    jq -e '.checks | type == "array"' >/dev/null 2>&1 <<<"$body" || return 1
+    printf '%s' "$body"
+}
+
+cmd_doctor() {
+    local all=false json=false api_base
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --all) all=true; shift ;;
+            --json) json=true; shift ;;
+            -h|--help)
+                cat << 'HELP'
+Usage: aimaestro-agent.sh doctor [--all] [--json]
+
+Checks this host's agents, install and peers, the same report as Settings → Doctor.
+
+Options:
+  --all    Every enabled host in Settings → Hosts, each asked for its own report
+  --json   The raw report (with --all, an array of {host, url, report})
+
+Exit code: 0 when no check fails, 1 when one fails or a host does not answer.
+Fixes are offered in Settings → Doctor, not here.
+HELP
+                return 0 ;;
+            *) print_error "Unknown option: $1"; return 1 ;;
+        esac
+    done
+    _validate_api_base api_base || return 1
+
+    local hosts
+    if [[ "$all" == true ]]; then
+        hosts=$(curl -s --max-time 10 "$api_base/api/hosts" | jq -r '.hosts[]? | select(.enabled != false and (.url // "") != "")
+            | [([.name, .id, .url] | map(select(. != null and . != "")) | first), (.url | sub("/+$"; ""))] | join("\u001f")') || hosts=""
+        [[ -z "$hosts" ]] && { print_error "Could not read the hosts list"; return 1; }
+    else
+        hosts=$(printf '%s\x1f%s' "this host" "$api_base")
+    fi
+
+    local failed=0 name url report out="[]"
+    while IFS=$'\x1f' read -r name url; do
+        [[ -z "$url" ]] && continue
+        if ! report=$(_doctor_fetch "$url"); then
+            failed=1
+            if [[ "$json" == true ]]; then
+                out=$(jq --arg h "$name" --arg u "$url" '. + [{host: $h, url: $u, error: "no report"}]' <<<"$out")
+            else
+                printf '%b%s%b (%s)\n%b\n\n' "$BOLD" "$name" "$NC" "$url" "  ${RED}✗ did not answer with a report${NC}"
+            fi
+            continue
+        fi
+        if [[ "$json" == true ]]; then
+            out=$(jq --arg h "$name" --arg u "$url" --argjson r "$report" '. + [{host: $h, url: $u, report: $r}]' <<<"$out")
+        else
+            _doctor_print "$report" || failed=1
+            echo ""
+        fi
+    done <<<"$hosts"
+
+    if [[ "$json" == true ]]; then
+        if [[ "$all" == true ]]; then echo "$out"; else jq '.[0].report // .[0]' <<<"$out"; fi
+    fi
+    return $failed
 }
 
 # ============================================================================
