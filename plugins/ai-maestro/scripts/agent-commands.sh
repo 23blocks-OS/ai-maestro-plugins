@@ -67,27 +67,30 @@ EOF
 # Prints one host's report: a line per check, failures first, its items indented and its hint.
 # Args: report-json. Returns 1 when a check fails.
 _doctor_print() {
-    local report="$1" line status text
-    local ok="${GREEN}✓${NC}" warn="${YELLOW}!${NC}" fail="${RED}✗${NC}"
-    echo -e "${BOLD}$(jq -r '"\(.hostname // "?") · v\(.version // "?") · \(.summary.passed // 0) passed, \(.summary.warnings // 0) warnings, \(.summary.failed // 0) failed"' <<<"$report")${NC}"
-    while IFS=$'\t' read -r status text; do
+    local report="$1" status text pre post
+    # Fields are split on \x1f (not tab: jq's @tsv escapes backslashes, and tab is whitespace to `read`, so an
+    # empty field would shift the next). Text is printed with %s, so a backslash in a path stays as written.
+    printf '%b%s%b\n' "$BOLD" "$(jq -r '"\(.hostname // "?") · v\(.version // "?") · \(.summary.passed // 0) passed, \(.summary.warnings // 0) warnings, \(.summary.failed // 0) failed"' <<<"$report")" "$NC"
+    while IFS=$'\x1f' read -r status text; do
+        post="$NC"
         case "$status" in
-            pass) line="  $ok $text" ;;
-            warn) line="  $warn $text" ;;
-            fail) line="  $fail $text" ;;
-            item-pass) line="      ${text}" ;;
-            item-warn) line="      ${YELLOW}${text}${NC}" ;;
-            item-fail) line="      ${RED}${text}${NC}" ;;
-            hint) line="      ${BLUE}→ ${text}${NC}" ;;
+            pass) pre="  ${GREEN}✓${NC} " ;;
+            warn) pre="  ${YELLOW}!${NC} " ;;
+            fail) pre="  ${RED}✗${NC} " ;;
+            item-pass) pre="      " ;;
+            item-warn) pre="      ${YELLOW}" ;;
+            item-fail) pre="      ${RED}" ;;
+            hint) pre="      ${BLUE}→ " ;;
             *) continue ;;
         esac
-        echo -e "$line"
+        printf '%b%s%b\n' "$pre" "$text" "$post"
     done < <(jq -r '
         def rank: if . == "fail" then 0 elif . == "warn" then 1 else 2 end;
+        def line($s; $t): $s + "\u001f" + ($t | tostring | gsub("[\n\r\t\u001f]"; " "));
         (.checks // []) | sort_by(.status | rank) | .[] |
-          ([.status, "\(.name): \(.message)"] | @tsv),
-          ((.items // [])[] | ["item-" + .status, (.agentName as $n | if $n and (.message | contains($n) | not) then "\($n): \(.message)" else .message end)] | @tsv),
-          (if .status != "pass" and .hint then ["hint", .hint] | @tsv else empty end)
+          line(.status; "\(.name): \(.message)"),
+          ((.items // [])[] | line("item-" + .status; (.agentName as $n | if $n and (.message | contains($n) | not) then "\($n): \(.message)" else .message end))),
+          (if .status != "pass" and .hint then line("hint"; .hint) else empty end)
     ' <<<"$report")
     [[ "$(jq -r '[.checks[]? | select(.status == "fail")] | length' <<<"$report")" == "0" ]]
 }
@@ -128,21 +131,22 @@ HELP
 
     local hosts
     if [[ "$all" == true ]]; then
-        hosts=$(curl -s --max-time 10 "$api_base/api/hosts" | jq -r '.hosts[]? | select(.enabled != false) | [(.name // .id), (.url | sub("/+$"; ""))] | @tsv') || hosts=""
+        hosts=$(curl -s --max-time 10 "$api_base/api/hosts" | jq -r '.hosts[]? | select(.enabled != false and (.url // "") != "")
+            | [([.name, .id, .url] | map(select(. != null and . != "")) | first), (.url | sub("/+$"; ""))] | join("\u001f")') || hosts=""
         [[ -z "$hosts" ]] && { print_error "Could not read the hosts list"; return 1; }
     else
-        hosts=$(printf '%s\t%s' "this host" "$api_base")
+        hosts=$(printf '%s\x1f%s' "this host" "$api_base")
     fi
 
     local failed=0 name url report out="[]"
-    while IFS=$'\t' read -r name url; do
+    while IFS=$'\x1f' read -r name url; do
         [[ -z "$url" ]] && continue
         if ! report=$(_doctor_fetch "$url"); then
             failed=1
             if [[ "$json" == true ]]; then
                 out=$(jq --arg h "$name" --arg u "$url" '. + [{host: $h, url: $u, error: "no report"}]' <<<"$out")
             else
-                echo -e "${BOLD}${name}${NC} (${url})"; echo -e "  ${RED}✗ did not answer with a report${NC}"; echo ""
+                printf '%b%s%b (%s)\n%b\n\n' "$BOLD" "$name" "$NC" "$url" "  ${RED}✗ did not answer with a report${NC}"
             fi
             continue
         fi
