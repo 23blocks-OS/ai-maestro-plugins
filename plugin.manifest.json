@@ -1,11 +1,11 @@
 {
   "name": "ai-maestro",
-  "version": "1.19.8",
+  "version": "1.19.9",
   "description": "AI agent orchestration \u2014 memory search, code graph, AMP messaging, docs search, task planning",
   "output": "./plugins/ai-maestro",
   "plugin": {
     "name": "ai-maestro",
-    "version": "1.19.8",
+    "version": "1.19.9",
     "description": "AI agent orchestration: agent messaging (AMP), identity (AID), canvas pages, memory, docs and code graph search, agent management and planning",
     "author": {
       "name": "23blocks"
@@ -54,7 +54,7 @@
       "repo": "https://github.com/agentmessaging/agent-actions.git",
       "ref": "main",
       "map": {
-        "skills/canvas-actions": "skills/canvas-actions"
+        "skills/agent-actions": "skills/agent-actions"
       }
     },
     {
@@ -66,6 +66,17 @@
       "map": {
         "skills/agent-files": "skills/agent-files",
         "scripts/*.sh": "scripts/"
+      }
+    },
+    {
+      "name": "agent-device-protocol",
+      "description": "Agent Device Protocol (ADP): agents own and use real devices",
+      "type": "git",
+      "repo": "https://github.com/agentmessaging/agent-device-protocol.git",
+      "ref": "main",
+      "map": {
+        "skills/agent-devices": "skills/agent-devices",
+        "scripts/adp-device.sh": "scripts/adp-device.sh"
       }
     },
     {

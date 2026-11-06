@@ -3,6 +3,11 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.19.9] - 2026-11-06
+
+- `canvas-actions` is now `agent-actions`, named after its protocol like the others.
+- The `agent-devices` skill and `adp-device.sh`, pulled from `agentmessaging/agent-device-protocol` like the other protocols: an agent lists, jumps to and uses its own devices (agentdevices.org). Needs AI Maestro 0.106.77 or newer.
+
 ## [1.19.8] - 2026-11-05
 
 - `aimaestro-agent.sh doctor [--all] [--json]` prints the Doctor report (ai-maestro F069 step 3): one line per check, failures first, its items named by agent and its hint. `--all` asks every enabled host in the hosts list for its own report. Exit code 1 when a check fails or a host does not answer. Fixes stay in Settings → Doctor.
