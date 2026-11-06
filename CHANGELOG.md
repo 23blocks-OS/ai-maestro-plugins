@@ -3,6 +3,10 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.19.10] - 2026-11-06
+
+- `aimaestro-react.sh`: an agent reacts to a message in its chat, such as ✅ to say "read it, on it". Needs AI Maestro 0.106.90 or newer.
+
 ## [1.19.9] - 2026-11-06
 
 - `canvas-actions` is now `agent-actions`, named after its protocol like the others.
