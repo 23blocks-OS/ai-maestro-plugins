@@ -3,6 +3,10 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.19.9] - 2026-11-06
+
+- `aimaestro-device.sh` and the `agent-devices` skill: an agent lists, jumps to and uses its own devices through AI Maestro (the Agent Device Protocol, agentdevices.org). Needs AI Maestro 0.106.77 or newer.
+
 ## [1.19.8] - 2026-11-05
 
 - `aimaestro-agent.sh doctor [--all] [--json]` prints the Doctor report (ai-maestro F069 step 3): one line per check, failures first, its items named by agent and its hint. `--all` asks every enabled host in the hosts list for its own report. Exit code 1 when a check fails or a host does not answer. Fixes stay in Settings → Doctor.
