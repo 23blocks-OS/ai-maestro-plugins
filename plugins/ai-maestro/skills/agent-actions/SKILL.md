@@ -1,5 +1,5 @@
 ---
-name: canvas-actions
+name: agent-actions
 description: Create and update interactive HTML pages (canvases) that the user sees in the AI Maestro dashboard, and handle what they click, submit or select. Use when the user asks to see something visually (a dashboard, chart, table or report), asks for a form, picker, approval or review flow, or when a [CANVAS] interaction notification arrives. Not for one-line answers, code or terminal commands.
 license: Apache-2.0
 compatibility: Requires AI Maestro dashboard. Agent must have an ID registered in ~/.aimaestro/agents/.
