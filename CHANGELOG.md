@@ -5,7 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [1.19.9] - 2026-11-06
 
-- `aimaestro-device.sh` and the `agent-devices` skill: an agent lists, jumps to and uses its own devices through AI Maestro (the Agent Device Protocol, agentdevices.org). Needs AI Maestro 0.106.77 or newer.
+- `canvas-actions` is now `agent-actions`, named after its protocol like the others.
+- The `agent-devices` skill and `adp-device.sh`, pulled from `agentmessaging/agent-device-protocol` like the other protocols: an agent lists, jumps to and uses its own devices (agentdevices.org). Needs AI Maestro 0.106.77 or newer.
 
 ## [1.19.8] - 2026-11-05
 

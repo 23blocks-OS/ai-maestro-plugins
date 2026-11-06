@@ -1,6 +1,7 @@
 #!/bin/bash
-# aimaestro-device.sh - an agent's own homes: the real devices it owns (the Agent Device Protocol, agentdevices.org).
-# Everything goes through AI Maestro, which holds the agent's key and refuses what the protocol refuses.
+# adp-device.sh - an agent's own devices (the Agent Device Protocol, agentdevices.org).
+# It asks the agent's controller, which holds the key and refuses what the protocol refuses. It speaks AI Maestro's
+# controller API; apps/controller offers the same operations over MCP.
 #
 # Version: 1.0.0
 set -u -o pipefail
@@ -16,7 +17,7 @@ command -v jq >/dev/null 2>&1 || die "jq is required"
 
 usage() {
   cat <<'USAGE'
-Usage: aimaestro-device.sh [--agent <id>] <command> ...
+Usage: adp-device.sh [--agent <id>] <command> ...
 
 Commands:
   list [--refresh] [--json]          Your devices, and which one is active
@@ -30,6 +31,7 @@ Commands:
   show-image <device> <file>         Show a PNG or JPEG, up to 256 KiB
   say <device> "<text>"              Say up to 500 bytes of text
   run <device> <custom.owner.action> [--arg name=value]...   A capability the device's owner defined
+                                     --arg makes true, false and numbers typed; --string keeps text as text
 
 <device> is the name or the key. Sensors, output and custom capabilities need the active device: jump first.
 The device's own grants still apply: if one is refused, ask the person at the device.
@@ -45,7 +47,7 @@ while [ $# -gt 0 ]; do
 done
 [ $# -ge 1 ] || { usage; exit 1; }
 [ -n "$AGENT" ] || die "AIM_AGENT_ID is not set: this command runs inside an AI Maestro agent, or give --agent <id>"
-BASE="$API/api/agents/$AGENT/devices"
+BASE="$API/api/agents/$(jq -rn --arg a "$AGENT" '$a | @uri')/devices"
 
 # Args: method url [json]. Prints the body; fails with the server's own message.
 request() {
@@ -58,6 +60,7 @@ request() {
   if [ "$code" -ge 400 ] || [ "$(jq -r '.ok == false' <<<"$body" 2>/dev/null)" = "true" ]; then
     die "$(jq -r '.message // .error // "request failed"' <<<"$body" 2>/dev/null || echo "HTTP $code")"
   fi
+  jq -e . >/dev/null 2>&1 <<<"$body" || die "AI Maestro at $API did not answer with JSON: is it 0.106.77 or newer?"
   printf '%s' "$body"
 }
 
@@ -67,7 +70,7 @@ resolve() {
   local want="$1" devices
   devices=$(request GET "$BASE") || exit 1
   KEY=$(jq -r --arg w "$want" '[.devices[] | select(.key == $w or .name == $w) | .key] | if length == 1 then .[0] else "" end' <<<"$devices")
-  [ -n "$KEY" ] || die "No single device called \"$want\". See: aimaestro-device.sh list"
+  [ -n "$KEY" ] || die "No single device called \"$want\". See: adp-device.sh list"
 }
 
 invoke() {
@@ -76,8 +79,6 @@ invoke() {
   # Through stdin: Linux refuses one argument over 128 KB, and an image is more
   request POST "$BASE/$key/invoke" "$(jq -c --arg c "$capability" '{capability: $c, args: .}' <<<"$args")"
 }
-
-seconds_of() { [[ "${1:-5}" =~ ^[0-9]+$ ]] || die "seconds must be a number"; echo "${1:-5}"; }
 
 cmd="$1"; shift
 case "$cmd" in
@@ -90,7 +91,7 @@ case "$cmd" in
         *) die "Unknown option: $a" ;;
       esac
     done
-    body=$(request GET "$url")
+    body=$(request GET "$url") || exit 1
     if [ "$json" = true ]; then jq '.devices' <<<"$body"; exit 0; fi
     [ "$(jq '.devices | length' <<<"$body")" -gt 0 ] || { echo "No devices."; exit 0; }
     jq -r '.devices[] | "\(if .active then "*" else " " end) \(.name)  \(.state)  \(.capabilities | join(", "))"' <<<"$body"
@@ -117,7 +118,9 @@ case "$cmd" in
   watch|listen)
     [ $# -ge 1 ] && [ $# -le 2 ] || die "Usage: $cmd <device> [seconds]"
     kind=video; [ "$cmd" = listen ] && kind=microphone
-    resolve "$1"; request POST "$BASE/$KEY/media" "$(jq -cn --arg k "$kind" --argjson s "$(seconds_of "${2:-5}")" '{kind: $k, seconds: $s}')" | jq -r '.value.path'
+    seconds="${2:-5}"
+    [[ "$seconds" =~ ^[0-9]+$ ]] || die "seconds must be a whole number"
+    resolve "$1"; request POST "$BASE/$KEY/media" "$(jq -cn --arg k "$kind" --argjson s "$seconds" '{kind: $k, seconds: $s}')" | jq -r '.value.path'
     ;;
   show)
     [ $# -eq 2 ] || die "Usage: show <device> \"<text>\""
@@ -139,13 +142,17 @@ case "$cmd" in
     resolve "$1"; invoke "$KEY" speaker.say "$(jq -cn --arg t "$2" '{text: $t}')" >/dev/null; echo "Said."
     ;;
   run)
-    [ $# -ge 2 ] || die "Usage: run <device> <custom.owner.action> [--arg name=value]..."
+    [ $# -ge 2 ] || die "Usage: run <device> <custom.owner.action> [--arg name=value] [--string name=value]..."
     device="$1"; capability="$2"; shift 2
     args='{}'
     while [ $# -gt 0 ]; do
-      [ "$1" = --arg ] && [ $# -ge 2 ] && [[ "$2" == *=* ]] || die "Use --arg name=value"
-      # A number or true/false stays typed: the device's schema decides what it accepts
-      args=$(jq -c --arg k "${2%%=*}" --arg v "${2#*=}" '. + {($k): ($v | (fromjson? // .))}' <<<"$args")
+      [ $# -ge 2 ] && [[ "$2" == *=* ]] || die "Use --arg name=value or --string name=value"
+      case "$1" in
+        # Only these become typed: the protocol's arguments are strings, numbers and booleans, never nested
+        --arg) args=$(jq -c --arg k "${2%%=*}" --arg v "${2#*=}" '. + {($k): (if $v == "true" then true elif $v == "false" then false elif ($v | test("^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$")) then ($v | tonumber) else $v end)}' <<<"$args") ;;
+        --string) args=$(jq -c --arg k "${2%%=*}" --arg v "${2#*=}" '. + {($k): $v}' <<<"$args") ;;
+        *) die "Use --arg name=value or --string name=value" ;;
+      esac
       shift 2
     done
     resolve "$device"; invoke "$KEY" "$capability" "$args" | jq -c '.value'
