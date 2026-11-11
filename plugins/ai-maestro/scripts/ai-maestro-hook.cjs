@@ -199,6 +199,18 @@ function buildHookStateData(state) {
     };
 }
 
+// Which sign-in this Claude session has, in Claude Code's own order, and the kind aim-launch.sh marked (#65 part 2).
+// Kinds only: no value or fingerprint is sent. Claude Code removes CLAUDE_CODE_OAUTH_TOKEN from a hook's environment
+// (tested 2026-11-11; the API key, gateway token and base URL stay), so the launcher's mark stands for the token: the
+// launcher starts the program only after putting a non-empty token in its environment.
+function credentialSeen() {
+    const e = process.env;
+    const via = e.ANTHROPIC_AUTH_TOKEN ? 'gateway' : e.ANTHROPIC_API_KEY ? 'api-key'
+        : (e.CLAUDE_CODE_OAUTH_TOKEN || e.AIM_CREDENTIAL_VIA === 'oauth-token') ? 'oauth-token'
+        : e.CLAUDE_CONFIG_DIR ? 'config-dir' : 'host-login';
+    return { via, ...(e.AIM_CREDENTIAL_VIA && { launched: e.AIM_CREDENTIAL_VIA }) };
+}
+
 // Broadcast status update via WebSocket (non-blocking)
 async function broadcastStatusUpdate(cwd, state) {
     try {
@@ -236,7 +248,7 @@ async function broadcastStatusUpdate(cwd, state) {
             await fetch(`${aimBase()}/api/agents/${encodeURIComponent(agent.id)}/heartbeat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: state.status, claudeSessionId: currentSessionId })
+                body: JSON.stringify({ status: state.status, claudeSessionId: currentSessionId, credentialSeen: credentialSeen() })
             }).catch(() => {});
         }
 

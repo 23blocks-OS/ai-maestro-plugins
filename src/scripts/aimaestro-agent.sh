@@ -22,7 +22,7 @@
 #   doctor      Check this host's agents and install (--all: every host)
 #   help        Show this help
 #
-# Version: Sync with bump-version.sh - currently v1.0.2
+# Version: Sync with bump-version.sh - currently v1.0.3
 
 set -euo pipefail
 
@@ -102,7 +102,7 @@ main() {
         import)    shift; cmd_import "$@" ;;
         doctor)    shift; cmd_doctor "$@" ;;
         help|--help|-h) cmd_help ;;
-        --version|-v) echo "aimaestro-agent.sh v1.0.2" ;;
+        --version|-v) echo "aimaestro-agent.sh v1.0.3" ;;
         *) print_error "Unknown command: $1"; echo ""; cmd_help; exit 1 ;;
     esac
 }
