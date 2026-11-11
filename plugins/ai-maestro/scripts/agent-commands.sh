@@ -27,6 +27,7 @@ Commands:
   create <name>                 Create a new agent
   delete <agent>                Delete an agent
   update <agent>                Update agent properties
+  credential switch <agent>...  Move agents (or a --crew <tag>) to another account
   rename <old> <new>            Rename an agent
   session <subcommand>          Manage agent sessions
   hibernate <agent>             Hibernate an agent
@@ -1171,4 +1172,82 @@ HELP
     local imported_name
     imported_name=$(echo "$response" | jq -r '.agent.name')
     print_success "Agent imported: $imported_name"
+}
+
+# ============================================================================
+# CREDENTIAL (#65): move one agent or a whole crew to another account
+# ============================================================================
+
+cmd_credential() {
+    local sub="${1:-}"
+    case "$sub" in
+        switch) shift ;;
+        ""|-h|--help)
+            cat << 'HELP'
+Usage: aimaestro-agent.sh credential switch <agent>... | --crew <tag> --credential <kind> [options]
+
+Set the model access of one or more agents, for example when a key runs out and a whole
+crew has to move. The setting is applied when each agent wakes.
+
+  --crew <tag>           every agent on this computer with this tag (e.g. team:ops)
+  --credential <kind>    host-login | oauth-token | api-key | gateway | config-dir
+  --secret <NAME>        the vault entry's NAME, never the value
+  --base-url, --cred-model, --dir, --account   as for 'update'
+  --restart              restart each agent now if it is idle; a working agent is skipped
+                         and keeps its old account until you restart it
+
+Example: credential switch --crew team:ops --credential oauth-token --secret ACME_MAX_TOKEN --restart
+HELP
+            return 0 ;;
+        *) print_error "Unknown credential command: $sub (try: credential switch)"; return 1 ;;
+    esac
+
+    local crew="" restart=false
+    local -a targets=() pass=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --crew)
+                [[ $# -lt 2 ]] && { print_error "--crew requires a tag"; return 1; }
+                crew="$2"; shift 2 ;;
+            --restart) restart=true; shift ;;
+            --credential|--secret|--base-url|--cred-model|--dir|--account)
+                [[ $# -lt 2 ]] && { print_error "$1 requires a value"; return 1; }
+                pass+=("$1" "$2"); shift 2 ;;
+            -*) print_error "Unknown option: $1"; return 1 ;;
+            *) targets+=("$1"); shift ;;
+        esac
+    done
+    [[ " ${pass[*]:-} " == *" --credential "* ]] || { print_error "--credential <kind> is required"; return 1; }
+
+    local api_base
+    api_base=$(get_api_base)
+    if [[ -n "$crew" ]]; then
+        local names n
+        names=$(curl -s --max-time 30 "${api_base}/api/agents" | jq -r --arg t "$crew" '.agents[]? | select(.deletedAt == null and ((.tags // []) | index($t))) | .name')
+        while IFS= read -r n; do [[ -n "$n" ]] && targets+=("$n"); done <<< "$names"
+        [[ ${#targets[@]} -eq 0 ]] && { print_error "No agent on this computer has the tag $crew"; return 1; }
+    fi
+    [[ ${#targets[@]} -eq 0 ]] && { print_error "Name the agents, or give --crew <tag>"; return 1; }
+
+    local activity="" a st failed=0
+    local -a skipped=()
+    $restart && activity=$(curl -s --max-time 30 "${api_base}/api/sessions/activity")
+    for a in "${targets[@]}"; do
+        echo "== $a"
+        if ! cmd_update "$a" "${pass[@]}"; then failed=$((failed + 1)); continue; fi
+        $restart || continue
+        # Between tasks only: an agent at work keeps going on its old account until it is restarted
+        st=$(echo "$activity" | jq -r --arg n "$a" '.activity[$n] | if . == null then "asleep" else "\(.status)/\(.hookStatus // "")" end' 2>/dev/null)
+        case "$st" in
+            asleep) ;;  # not running: it wakes on the new account
+            idle/waiting_for_input|idle/idle|idle/)
+                if is_current_session "$a"; then skipped+=("$a (this session)")
+                elif resolve_agent "$a" && restart_agent "$RESOLVED_AGENT_ID" 3; then :
+                else failed=$((failed + 1)); fi ;;
+            *) skipped+=("$a (${st%%/*})") ;;
+        esac
+    done
+    [[ ${#skipped[@]} -gt 0 ]] && print_warning "Not restarted, on the old account until restarted: ${skipped[*]}"
+    [[ $failed -eq 0 ]] || { print_error "$failed agent(s) failed"; return 1; }
+    print_success "Model access set for ${#targets[@]} agent(s)"
 }
