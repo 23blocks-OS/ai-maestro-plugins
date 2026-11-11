@@ -764,6 +764,7 @@ HELP
 
 cmd_update() {
     local agent="" task="" tags="" add_tag="" remove_tag="" model="" args=""
+    local cred_kind="" cred_secret="" cred_base="" cred_model="" cred_dir="" cred_account=""
     local nl=$'\n'
 
     while [[ $# -gt 0 ]]; do
@@ -786,6 +787,13 @@ cmd_update() {
             --args)
                 [[ $# -lt 2 ]] && { print_error "--args requires a value"; return 1; }
                 args="$2"; shift 2 ;;
+            --credential|--secret|--base-url|--cred-model|--dir|--account)
+                [[ $# -lt 2 ]] && { print_error "$1 requires a value"; return 1; }
+                case "$1" in
+                    --credential) cred_kind="$2" ;; --secret) cred_secret="$2" ;; --base-url) cred_base="$2" ;;
+                    --cred-model) cred_model="$2" ;; --dir) cred_dir="$2" ;; --account) cred_account="$2" ;;
+                esac
+                shift 2 ;;
             -h|--help)
                 cat << 'HELP'
 Usage: aimaestro-agent.sh update <agent> [options]
@@ -797,6 +805,16 @@ Options:
   --tags <t1,t2>         Replace all tags
   --add-tag <tag>        Add a tag (repeat the flag to add several)
   --remove-tag <tag>     Remove a tag (repeat the flag to remove several)
+
+Model access (which account the agent uses; applied at its next wake):
+  --credential <kind>    host-login | oauth-token | api-key | gateway | config-dir
+  --secret <NAME>        the vault entry's NAME (aim-secret set NAME), never the value
+  --base-url <url>       gateway address (https)       --cred-model <id>   gateway model (optional)
+  --dir <path>           config-dir: a Claude config folder logged in to another account
+  --account <text>       whose account or plan it is, shown to people
+
+  Example: update dev-1 --credential oauth-token --secret PARTNER_MAX_TOKEN --account "Partner Max plan"
+  A whole crew: for a in dev-1 dev-2 dev-3; do aimaestro-agent.sh update "$a" --credential ...; done
 HELP
                 return 0 ;;
             -*) print_error "Unknown option: $1"; return 1 ;;
@@ -824,6 +842,10 @@ HELP
     [[ -n "$model" ]] && payload=$(echo "$payload" | jq --arg m "$model" '. + {model: $m}')
     [[ -n "$tags" ]] && payload=$(echo "$payload" | jq --arg t "$tags" '. + {tags: ($t | split(","))}')
     [[ -n "$args" ]] && payload=$(echo "$payload" | jq --arg a "$args" '. + {programArgs: $a}')
+    # The server checks the profile (and refuses a value where a vault name belongs)
+    [[ -n "$cred_kind" ]] && payload=$(echo "$payload" | jq --arg k "$cred_kind" --arg s "$cred_secret" --arg b "$cred_base" \
+        --arg m "$cred_model" --arg d "$cred_dir" --arg a "$cred_account" \
+        '. + {credential: ({kind: $k, secret: $s, baseUrl: $b, model: $m, dir: $d, account: $a} | with_entries(select(.value != "")))}')
 
     # Handle add/remove tag (need to get current tags first)
     if [[ -n "$add_tag" ]] || [[ -n "$remove_tag" ]]; then
@@ -858,6 +880,12 @@ HELP
     fi
 
     print_success "Agent updated: $RESOLVED_ALIAS"
+    if [[ -n "$cred_kind" ]]; then
+        local cred_info
+        cred_info=$(curl -s --max-time 15 "${api_base}/api/agents/${RESOLVED_AGENT_ID}/credential")
+        echo "  Model access: $(echo "$cred_info" | jq -r '.description // "?"') (at its next wake)"
+        echo "$cred_info" | jq -r '.warnings[]? | "  Warning: " + .' >&2
+    fi
 }
 
 # ============================================================================
