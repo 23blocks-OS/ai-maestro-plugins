@@ -133,6 +133,9 @@ CTX_WINDOW=$(echo "$input" | jq -r '.context_window.context_window_size // empty
 EFFORT=$(echo "$input" | jq -r '.effort.level // empty')
 # prompt_cache.warm is a boolean: "true", "false", or empty when the block is absent.
 CACHE_WARM=$(echo "$input" | jq -r 'if .prompt_cache == null or .prompt_cache.warm == null then "" else (.prompt_cache.warm | tostring) end')
+# Plan usage limits (subscriptions only; Claude Code sends each window while it is open): "pct resets_at" or empty
+LIM_5H=$(echo "$input" | jq -r '.rate_limits.five_hour // empty | "\(.used_percentage | floor) \(.resets_at)"' 2>/dev/null)
+LIM_WK=$(echo "$input" | jq -r '.rate_limits.seven_day // empty | "\(.used_percentage | floor) \(.resets_at)"' 2>/dev/null)
 CACHE_EXPIRES=$(echo "$input" | jq -r '.prompt_cache.expires_at // empty')
 TRANSCRIPT=$(echo "$input" | jq -r '.transcript_path // empty')
 
@@ -296,6 +299,36 @@ if [ -n "$AGENT_UUID" ] && [ -n "$COST" ] && [ -d "${AGENTS_BASE}/${AGENT_UUID}"
     fi
 fi
 
+# --- The account the agent is set to use (AI Maestro's Model access setting) ---
+# Read from the same cached agent list. A stale list is used as it is and refreshed in the background, so a slow
+# server never delays the render. Nothing is shown for an agent with no setting, or without AI Maestro.
+ACCT_LABEL=""; ACCT_CHECK=""
+if [ -n "$AGENT_NAME$AGENT_UUID" ]; then
+    _acct_cache="${TMPDIR:-/tmp}/amp-statusline-agents-$(id -u).json"
+    _acct_now=$(date +%s); _acct_age=999999; _acct_json=""
+    if [ -f "$_acct_cache" ] && [ ! -L "$_acct_cache" ]; then
+        _acct_at=$(head -n 1 "$_acct_cache" 2>/dev/null)
+        [[ "$_acct_at" =~ ^[0-9]+$ ]] && _acct_age=$(( _acct_now - _acct_at ))
+        [ "$_acct_age" -lt 3600 ] && _acct_json=$(tail -n +2 "$_acct_cache" 2>/dev/null)
+    fi
+    if [ "$_acct_age" -ge 60 ] && [ ! -L "$_acct_cache" ]; then
+        ( _t=$(mktemp "${_acct_cache}.XXXXXX" 2>/dev/null) || exit 0
+          _j=$(curl -s --connect-timeout 1 -m 8 "${AMP_MAESTRO_URL:-http://localhost:23000}/api/agents" 2>/dev/null)
+          if [ -n "$_j" ] && echo "$_j" | jq -e .agents >/dev/null 2>&1; then
+              { date +%s; echo "$_j"; } > "$_t" && mv "$_t" "$_acct_cache"
+          fi
+          rm -f "$_t" ) >/dev/null 2>&1 &
+    fi
+    if [ -n "$_acct_json" ]; then
+        _acct=$(echo "$_acct_json" | jq -r --arg n "$AGENT_NAME" --arg u "$AGENT_UUID" '
+            [ .agents[]? | select((($u != "") and .id == $u) or (($n != "") and .name == $n)) | select(.credential != null) ][0] // empty
+            | (.credential.account // ({"host-login": "this computer'"'"'s login", "oauth-token": "token", "api-key": "API key",
+                 "gateway": "gateway", "config-dir": "login folder"}[.credential.kind] + (if .credential.secret then " " + .credential.secret else "" end))) as $label
+            | "\(.credentialCheck.state // "-")\t\($label | gsub("[\t\n]"; " "))"' 2>/dev/null)
+        [ -n "$_acct" ] && IFS=$'\t' read -r ACCT_CHECK ACCT_LABEL <<< "$_acct"
+    fi
+fi
+
 # --- Build status line ---
 # Row 1 names the agent: name, AMP address and folder, then the unread count.
 # Row 2 (below) is the model, context size and cost.
@@ -345,9 +378,19 @@ if [ -n "$AGENT_ADDRESS" ]; then
     # Length in characters (UTF-8 aware where the locale allows).
     _len() { printf '%s' "$1" | wc -m | tr -d ' '; }
 
+    # The account (AI Maestro's Model access setting): red when the session uses another one
+    ACCT_PLAIN=""; ACCT_PART=""
+    if [ -n "${ACCT_LABEL:-}" ]; then
+        case "${ACCT_CHECK:-}" in
+            mismatch) ACCT_PLAIN="⚠ wrong account, set to ${ACCT_LABEL}"; ACCT_PART="\033[31m${ACCT_PLAIN}\033[0m" ;;
+            unverified) ACCT_PLAIN="acct ${ACCT_LABEL}?"; ACCT_PART="\033[33m${ACCT_PLAIN}\033[0m" ;;
+            *) ACCT_PLAIN="acct ${ACCT_LABEL}"; ACCT_PART="$ACCT_PLAIN" ;;
+        esac
+    fi
+
     COLS="${COLUMNS:-0}"
     case "$COLS" in ''|*[!0-9]*) COLS=0 ;; esac
-    SUFFIX_LEN=$(( $(_len " | ${UNREAD_PLAIN}") ))
+    SUFFIX_LEN=$(( $(_len " | ${UNREAD_PLAIN}${ACCT_PLAIN:+ | $ACCT_PLAIN}") ))
 
     ADDR_SHOWN="${AGENT_ADDRESS_SHOWN:-$AGENT_ADDRESS}"
     ROW1=$(_join "$AGENT_NAME" "$ADDR_SHOWN" "$FOLDER")
@@ -360,7 +403,7 @@ if [ -n "$AGENT_ADDRESS" ]; then
     if [ "$COLS" -gt 0 ] && [ $(( $(_len "$ROW1") + SUFFIX_LEN )) -gt "$COLS" ]; then
         ROW1="$ADDR_SHOWN"
     fi
-    AMP_PART="${ROW1} | ${UNREAD_PART}"
+    AMP_PART="${ROW1} | ${UNREAD_PART}${ACCT_PART:+ | $ACCT_PART}"
 elif [ -z "$AGENT_UUID" ] && [ -z "$AGENT_NAME" ]; then
     # Nothing says which agent this session is. Registering did not fail; the session has no name.
     AMP_PART="AMP: this session has no agent name (set CLAUDE_AGENT_NAME, or run amp-init --name <agent> --remember)"
@@ -399,6 +442,19 @@ case "$CACHE_EXPIRES" in ''|*[!0-9]*) CACHE_EXPIRES="" ;; esac
 case "$CTX_WINDOW" in ''|*[!0-9]*) CTX_WINDOW="" ;; esac
 
 ROW2="$MODEL | ctx $CTX | \$$COST_FMT"
+# Usage limits: 5h 42% · wk 18%, yellow from 80%, red from 95%
+LIMITS_TXT=""; LIMITS_MAX=0
+for _lim in "5h:$LIM_5H" "wk:$LIM_WK"; do
+    _lbl="${_lim%%:*}"; _val="${_lim#*:}"; _pct="${_val%% *}"
+    case "$_pct" in ''|*[!0-9]*) continue ;; esac
+    LIMITS_TXT="${LIMITS_TXT}${LIMITS_TXT:+ · }${_lbl} ${_pct}%"
+    [ "$_pct" -gt "$LIMITS_MAX" ] && LIMITS_MAX=$_pct
+done
+if [ -n "$LIMITS_TXT" ]; then
+    if [ "$LIMITS_MAX" -ge 95 ]; then ROW2="$ROW2 | \033[31m${LIMITS_TXT}\033[0m"
+    elif [ "$LIMITS_MAX" -ge 80 ]; then ROW2="$ROW2 | \033[33m${LIMITS_TXT}\033[0m"
+    else ROW2="$ROW2 | $LIMITS_TXT"; fi
+fi
 [ -n "$EFFORT" ] && ROW2="$ROW2 | effort $EFFORT"
 
 # Cache: warm with time left, or cold. Warm but past its expiry is cold.
@@ -434,7 +490,7 @@ fi
 # 10 s per agent, and at once when the cost, effort or cache state changed.
 if [ -n "$AGENT_UUID" ] && [ -d "${AGENTS_BASE}/${AGENT_UUID}" ]; then
     _snap_cache="${AGENTS_BASE}/${AGENT_UUID}/.last-status-snapshot"
-    _snap_key="${COST}|${EFFORT}|${CACHE_WARM}"
+    _snap_key="${COST}|${EFFORT}|${CACHE_WARM}|${LIM_5H%% *}|${LIM_WK%% *}"
     _snap_last=$(cat "$_snap_cache" 2>/dev/null)
     _snap_ts="${_snap_last%%|*}"
     _snap_prev="${_snap_last#*|}"
@@ -448,7 +504,7 @@ if [ -n "$AGENT_UUID" ] && [ -d "${AGENTS_BASE}/${AGENT_UUID}" ]; then
             --argjson contextTokens "${CTX_TOKENS:-0}" --arg contextWindow "$CTX_WINDOW" \
             --argjson contextPercent "${PCT:-0}" --argjson cost "$_cost_num" \
             --arg effort "$EFFORT" --arg cacheWarm "$CACHE_WARM" --arg cacheExpiresAt "$CACHE_EXPIRES" \
-            --arg exceeds "$OVER_200K" --argjson ts "${NOW_S}000" \
+            --arg exceeds "$OVER_200K" --argjson ts "${NOW_S}000" --arg lim5h "$LIM_5H" --arg limWk "$LIM_WK" \
             '{sessionId: (if $sessionId == "" then null else $sessionId end),
               model: $model, modelId: (if $modelId == "" then null else $modelId end),
               contextTokens: $contextTokens,
@@ -457,7 +513,10 @@ if [ -n "$AGENT_UUID" ] && [ -d "${AGENTS_BASE}/${AGENT_UUID}" ]; then
               effort: (if $effort == "" then null else $effort end),
               cacheWarm: (if $cacheWarm == "true" then true elif $cacheWarm == "false" then false else null end),
               cacheExpiresAt: (if $cacheExpiresAt == "" then null else ($cacheExpiresAt | tonumber) end),
-              exceeds200k: ($exceeds == "true"), ts: $ts}' 2>/dev/null)
+              exceeds200k: ($exceeds == "true"), ts: $ts}
+             + (if $lim5h == "" and $limWk == "" then {} else {limits: (
+                 (if $lim5h == "" then {} else {fiveHour: ($lim5h | split(" ") | {percent: (.[0] | tonumber), resetsAt: (.[1] | tonumber)})} end)
+                 + (if $limWk == "" then {} else {week: ($limWk | split(" ") | {percent: (.[0] | tonumber), resetsAt: (.[1] | tonumber)})} end))} end)' 2>/dev/null)
         if [ -n "$_snap_json" ]; then
             curl -s -m 1 -X POST "${AMP_MAESTRO_URL:-http://localhost:23000}/api/agents/${AGENT_UUID}/status-snapshot" \
                 -H 'Content-Type: application/json' -d "$_snap_json" >/dev/null 2>&1 &
