@@ -437,6 +437,7 @@ is_allowed_program() {
 cmd_create() {
     local name="" dir="" program="claude-code" model="" task="" tags="" trust_level="" permissions="full"
     local no_session=false no_folder=false force_folder=false
+    local cred_kind="" cred_secret="" cred_base="" cred_model="" cred_dir="" cred_account=""
     local -a program_args=()  # Arguments to pass to the program (after --)
 
     while [[ $# -gt 0 ]]; do
@@ -465,6 +466,13 @@ cmd_create() {
             --no-session) no_session=true; shift ;;
             --no-folder) no_folder=true; shift ;;
             --force-folder) force_folder=true; shift ;;
+            --credential|--secret|--base-url|--cred-model|--cred-dir|--account)
+                [[ $# -lt 2 ]] && { print_error "$1 requires a value"; return 1; }
+                case "$1" in
+                    --credential) cred_kind="$2" ;; --secret) cred_secret="$2" ;; --base-url) cred_base="$2" ;;
+                    --cred-model) cred_model="$2" ;; --cred-dir) cred_dir="$2" ;; --account) cred_account="$2" ;;
+                esac
+                shift 2 ;;
             --)
                 # Everything after -- is passed to the program
                 shift
@@ -492,6 +500,14 @@ Options:
   --no-folder            Don't create project folder
   --force-folder         Use existing directory (by default, errors if exists)
 
+Model access (which account the agent uses, from its first start):
+  --credential <kind>    host-login | oauth-token | api-key | gateway | config-dir
+  --secret <NAME>        the vault entry's NAME (aim-secret set NAME), never the value
+  --base-url <url>       gateway address (https)       --cred-model <id>   gateway model (optional)
+  --cred-dir <path>      config-dir: a Claude config folder logged in to another account
+  --account <text>       whose account or plan it is, shown to people
+  Without --credential the agent uses this computer's own login.
+
 Program Arguments:
   Use -- to pass arguments to the program when it starts.
 
@@ -508,6 +524,9 @@ Examples:
 
   # Create an agent that can only read and use the AMP scripts (no shell, no writes)
   aimaestro-agent.sh create gateway-bot --dir ~/Code/gateway-bot --permissions messaging
+
+  # Create an agent that runs on a subscription token kept in the vault
+  aimaestro-agent.sh create ops-1 --dir ~/Code/ops --credential oauth-token --secret ACME_MAX_TOKEN --account "Acme Max plan"
 
   # Create agent with tags
   aimaestro-agent.sh create utils-agent --dir ~/Code/utils --tags "utils,tools"
@@ -637,6 +656,13 @@ HELP
         fi
         payload=$(echo "$payload" | jq --arg tl "$trust_level" '. + {permissionMode: $tl}')
     fi
+    # Model access; the server checks it and refuses a value where a vault name belongs
+    [[ -n "$cred_kind" ]] && payload=$(echo "$payload" | jq --arg k "$cred_kind" --arg s "$cred_secret" --arg b "$cred_base" \
+        --arg m "$cred_model" --arg d "$cred_dir" --arg a "$cred_account" \
+        '. + {credential: ({kind: $k, secret: $s, baseUrl: $b, model: $m, dir: $d, account: $a} | with_entries(select(.value != "")))}')
+    if [[ -z "$cred_kind" ]] && [[ -n "$cred_secret$cred_base$cred_model$cred_dir$cred_account" ]]; then
+        print_error "--secret, --base-url, --cred-model, --cred-dir and --account need --credential <kind>"; return 1
+    fi
     # Program arguments (passed after --) - sent as string
     if [[ ${#program_args[@]} -gt 0 ]]; then
         local args_str="${program_args[*]}"
@@ -673,6 +699,13 @@ HELP
         [[ "$force_folder" == true ]] && echo "   Note: Used existing directory (--force-folder)"
         [[ "$no_session" == false ]] && echo "   Session: $name (tmux)"
         [[ ${#program_args[@]} -gt 0 ]] && echo "   Program args: ${program_args[*]}"
+        if [[ -n "$cred_kind" ]]; then
+            # An existing folder (--force-folder) can carry settings that defeat the choice: say so now
+            local cred_info
+            cred_info=$(curl -s --max-time 15 "${api_base}/api/agents/${agent_id}/credential")
+            echo "   Model access: $(echo "$cred_info" | jq -r '.description // "?"')"
+            echo "$cred_info" | jq -r '.warnings[]? | "   Warning: " + .' >&2
+        fi
     else
         print_error "Failed to create agent"
         echo "$response" | jq . >&2

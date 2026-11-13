@@ -274,6 +274,8 @@ cmd_wake() {
     fi
 
     print_success "Agent is awake: $RESOLVED_ALIAS"
+    # A settings file that would make it run on another account than its model access (#65)
+    echo "$response" | jq -r '.credentialWarnings[]? | "  Warning: " + .' >&2
 
     if [[ "$attach" == true ]]; then
         local session_name
