@@ -273,6 +273,23 @@ aimaestro-agent.sh plugin marketplace add current-agent github:my-org/plugins
 aimaestro-agent.sh plugin install current-agent my-plugin
 ```
 
+### Scenario 8: A Key Ran Out — Move a Crew to Another Account
+
+```bash
+# The user stores the new token first (the value never goes through the chat)
+aim-secret request ACME_MAX_TOKEN
+
+# Move every agent tagged team:ops; idle ones restart now, busy ones are named and skipped
+aimaestro-agent.sh credential switch --crew team:ops --credential oauth-token --secret ACME_MAX_TOKEN \
+    --account "Acme Max plan" --restart
+
+# Restart the skipped ones when they finish, then check each one
+aimaestro-agent.sh restart ops-3
+curl -s "http://localhost:23000/api/agents/<agent-id>/credential" | jq '.check'
+```
+
+`check.state` must be `match`. Settings → Accounts in the dashboard shows every agent grouped by the account it draws from.
+
 ---
 
 ## Troubleshooting
