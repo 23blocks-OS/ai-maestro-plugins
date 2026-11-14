@@ -513,6 +513,8 @@ async function checkUnreadMessages(cwd, prompt) {
             debugLog({ event: 'no_agent_for_cwd', cwd });
             return null;
         }
+        // In a meeting (F116): messages wait; AI Maestro lists them when the agent leaves
+        if (agent.inMeeting) return null;
 
         // Check for unread messages
         const messagesResponse = await fetch(
@@ -594,6 +596,7 @@ async function fetchUnreadMessages(cwd) {
     if (!agents) return null;
     const agent = resolveAgent(cwd, agents);
     if (!agent) { debugLog({ event: 'no_agent_for_cwd', cwd }); return null; }
+    if (agent.inMeeting) return null;
 
     const messagesResponse = await fetch(
         `${aimBase()}/api/messages?agent=${encodeURIComponent(agent.id)}&box=inbox&status=unread`,
