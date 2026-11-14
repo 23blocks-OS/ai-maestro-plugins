@@ -1,17 +1,17 @@
 ---
 name: agent-actions
-description: Create and update interactive HTML pages (canvases) that the user sees in the AI Maestro dashboard, and handle what they click, submit or select. Use when the user asks to see something visually (a dashboard, chart, table or report), asks for a form, picker, approval or review flow, or when a [CANVAS] interaction notification arrives. Not for one-line answers, code or terminal commands.
+description: Create and update interactive pages (canvases, HTML or A2UI) that the user sees in the AI Maestro dashboard, and handle what they click, submit or select. Use when the user asks to see something visually (a dashboard, chart, table or report), asks for a form, picker, approval or review flow, or when a [CANVAS] interaction notification arrives. Not for one-line answers, code or terminal commands.
 license: Apache-2.0
 compatibility: Requires AI Maestro dashboard. Agent must have an ID registered in ~/.aimaestro/agents/.
 metadata:
-  version: "1.3.0"
+  version: "1.4.0"
   homepage: "https://agentactions.org"
   repository: "https://github.com/agentmessaging/agent-actions"
 ---
 
 # Agent Canvas
 
-A canvas is an HTML file you write to your canvas directory. The AI Maestro dashboard shows it in the agent's Canvas tab, and anything the user does on it that calls `maestro.send()` comes back to you as a `[CANVAS]` notification. Answer in text by default; a canvas is for when the user asked for a page or has to act on your result, because viewing one means switching to the Canvas tab.
+A canvas is a page you write to your canvas directory: an HTML file, or an A2UI page (JSON). The AI Maestro dashboard shows it in the agent's Canvas tab, and anything the user does on it that calls `maestro.send()` comes back to you as a `[CANVAS]` notification. Answer in text by default; a canvas is for when the user asked for a page or has to act on your result, because viewing one means switching to the Canvas tab.
 
 ## Where pages live
 
@@ -26,7 +26,13 @@ AI Maestro sets `AIM_AGENT_ID` in agent sessions. If it is empty, look the id up
 
 To create or update a page, write the file (overwrite to update). The dashboard does not watch the file: tell the user to refresh or re-select it in the Canvas tab. Delete pages with `rm`.
 
-## Writing a page
+## Pick the format
+
+- **The user has to act** (approve or reject, choose, fill in a form, confirm): write an A2UI page, `<name>.a2ui.json`. The dashboard draws it with its own components and look, no code of yours runs, and every button reports a named action. How to write one: [references/a2ui-pages.md](references/a2ui-pages.md). Needs AI Maestro 0.106.193 or later.
+- **The user has to look** (a report, chart, table, diagram, anything with images or a custom layout): write HTML, as below. A2UI has no tables, charts or images.
+- **The page is for a meeting room**: HTML; a meeting shows only `.html` documents.
+
+## Writing an HTML page
 
 The page runs in an iframe with `sandbox="allow-scripts"` and nothing else, so:
 
