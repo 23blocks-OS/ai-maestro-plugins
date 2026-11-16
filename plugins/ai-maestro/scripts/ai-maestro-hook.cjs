@@ -69,7 +69,7 @@ const INJECT_DEADLINE_MS = 3500;
 // off. mac-mini (56 agents, memory indexing) logged 1,569 inbox-check timeouts in five weeks and
 // the hook ran past 5s: the status POSTs had no timeout and a timed-out inbox check then ran
 // amp-inbox.sh synchronously for up to 3s more.
-const HOOK_BUDGET_MS = 4200;
+const HOOK_BUDGET_MS = 3500; // leaves ~1.5s for Node start-up on a loaded host
 function withDeadline(promise, ms, fallback) {
     return Promise.race([
         promise,
