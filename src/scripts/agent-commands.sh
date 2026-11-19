@@ -437,7 +437,7 @@ is_allowed_program() {
 cmd_create() {
     local name="" dir="" program="claude-code" model="" task="" tags="" trust_level="" permissions="full"
     local no_session=false no_folder=false force_folder=false
-    local cred_kind="" cred_secret="" cred_base="" cred_model="" cred_dir="" cred_account=""
+    local cred_kind="" cred_secret="" cred_base="" cred_model="" cred_dir="" cred_account="" cred_fallback=""
     local -a program_args=()  # Arguments to pass to the program (after --)
 
     while [[ $# -gt 0 ]]; do
@@ -466,11 +466,11 @@ cmd_create() {
             --no-session) no_session=true; shift ;;
             --no-folder) no_folder=true; shift ;;
             --force-folder) force_folder=true; shift ;;
-            --credential|--secret|--base-url|--cred-model|--cred-dir|--account)
+            --credential|--secret|--base-url|--cred-model|--cred-dir|--account|--fallback)
                 [[ $# -lt 2 ]] && { print_error "$1 requires a value"; return 1; }
                 case "$1" in
                     --credential) cred_kind="$2" ;; --secret) cred_secret="$2" ;; --base-url) cred_base="$2" ;;
-                    --cred-model) cred_model="$2" ;; --cred-dir) cred_dir="$2" ;; --account) cred_account="$2" ;;
+                    --cred-model) cred_model="$2" ;; --cred-dir) cred_dir="$2" ;; --account) cred_account="$2" ;; --fallback) cred_fallback="$2" ;;
                 esac
                 shift 2 ;;
             --)
@@ -506,6 +506,7 @@ Model access (which account the agent uses, from its first start):
   --base-url <url>       gateway address (https)       --cred-model <id>   gateway model (optional)
   --cred-dir <path>      config-dir: a Claude config folder logged in to another account
   --account <text>       whose account or plan it is, shown to people
+  --fallback <A,B>       vault NAMES this agent may move to when its account hits a usage limit
   Without --credential the agent uses this computer's own login.
 
 Program Arguments:
@@ -658,10 +659,10 @@ HELP
     fi
     # Model access; the server checks it and refuses a value where a vault name belongs
     [[ -n "$cred_kind" ]] && payload=$(echo "$payload" | jq --arg k "$cred_kind" --arg s "$cred_secret" --arg b "$cred_base" \
-        --arg m "$cred_model" --arg d "$cred_dir" --arg a "$cred_account" \
-        '. + {credential: ({kind: $k, secret: $s, baseUrl: $b, model: $m, dir: $d, account: $a} | with_entries(select(.value != "")))}')
-    if [[ -z "$cred_kind" ]] && [[ -n "$cred_secret$cred_base$cred_model$cred_dir$cred_account" ]]; then
-        print_error "--secret, --base-url, --cred-model, --cred-dir and --account need --credential <kind>"; return 1
+        --arg m "$cred_model" --arg d "$cred_dir" --arg a "$cred_account" --arg f "${cred_fallback:-}" \
+        '. + {credential: (({kind: $k, secret: $s, baseUrl: $b, model: $m, dir: $d, account: $a} | with_entries(select(.value != ""))) + (if $f == "" then {} else {fallback: ($f | split(","))} end))}')
+    if [[ -z "$cred_kind" ]] && [[ -n "$cred_secret$cred_base$cred_model$cred_dir$cred_account${cred_fallback:-}" ]]; then
+        print_error "--secret, --base-url, --cred-model, --cred-dir, --account and --fallback need --credential <kind>"; return 1
     fi
     # Program arguments (passed after --) - sent as string
     if [[ ${#program_args[@]} -gt 0 ]]; then
@@ -798,7 +799,7 @@ HELP
 
 cmd_update() {
     local agent="" task="" tags="" add_tag="" remove_tag="" model="" args=""
-    local cred_kind="" cred_secret="" cred_base="" cred_model="" cred_dir="" cred_account=""
+    local cred_kind="" cred_secret="" cred_base="" cred_model="" cred_dir="" cred_account="" cred_fallback=""
     local nl=$'\n'
 
     while [[ $# -gt 0 ]]; do
@@ -821,11 +822,11 @@ cmd_update() {
             --args)
                 [[ $# -lt 2 ]] && { print_error "--args requires a value"; return 1; }
                 args="$2"; shift 2 ;;
-            --credential|--secret|--base-url|--cred-model|--dir|--account)
+            --credential|--secret|--base-url|--cred-model|--dir|--account|--fallback)
                 [[ $# -lt 2 ]] && { print_error "$1 requires a value"; return 1; }
                 case "$1" in
                     --credential) cred_kind="$2" ;; --secret) cred_secret="$2" ;; --base-url) cred_base="$2" ;;
-                    --cred-model) cred_model="$2" ;; --dir) cred_dir="$2" ;; --account) cred_account="$2" ;;
+                    --cred-model) cred_model="$2" ;; --dir) cred_dir="$2" ;; --account) cred_account="$2" ;; --fallback) cred_fallback="$2" ;;
                 esac
                 shift 2 ;;
             -h|--help)
@@ -846,6 +847,7 @@ Model access (which account the agent uses; applied at its next wake):
   --base-url <url>       gateway address (https)       --cred-model <id>   gateway model (optional)
   --dir <path>           config-dir: a Claude config folder logged in to another account
   --account <text>       whose account or plan it is, shown to people
+  --fallback <A,B>       vault NAMES this agent may move to when its account hits a usage limit
 
   Example: update dev-1 --credential oauth-token --secret PARTNER_MAX_TOKEN --account "Partner Max plan"
   A whole crew: for a in dev-1 dev-2 dev-3; do aimaestro-agent.sh update "$a" --credential ...; done
@@ -878,8 +880,8 @@ HELP
     [[ -n "$args" ]] && payload=$(echo "$payload" | jq --arg a "$args" '. + {programArgs: $a}')
     # The server checks the profile (and refuses a value where a vault name belongs)
     [[ -n "$cred_kind" ]] && payload=$(echo "$payload" | jq --arg k "$cred_kind" --arg s "$cred_secret" --arg b "$cred_base" \
-        --arg m "$cred_model" --arg d "$cred_dir" --arg a "$cred_account" \
-        '. + {credential: ({kind: $k, secret: $s, baseUrl: $b, model: $m, dir: $d, account: $a} | with_entries(select(.value != "")))}')
+        --arg m "$cred_model" --arg d "$cred_dir" --arg a "$cred_account" --arg f "${cred_fallback:-}" \
+        '. + {credential: (({kind: $k, secret: $s, baseUrl: $b, model: $m, dir: $d, account: $a} | with_entries(select(.value != ""))) + (if $f == "" then {} else {fallback: ($f | split(","))} end))}')
 
     # Handle add/remove tag (need to get current tags first)
     if [[ -n "$add_tag" ]] || [[ -n "$remove_tag" ]]; then
@@ -1226,6 +1228,7 @@ crew has to move. The setting is applied when each agent wakes.
   --credential <kind>    host-login | oauth-token | api-key | gateway | config-dir
   --secret <NAME>        the vault entry's NAME, never the value
   --base-url, --cred-model, --dir, --account   as for 'update'
+  --fallback <A,B>       vault NAMES this agent may move to when its account hits a usage limit
   --restart              restart each agent now if it is idle; a working agent is skipped
                          and keeps its old account until you restart it
 
@@ -1243,7 +1246,7 @@ HELP
                 [[ $# -lt 2 ]] && { print_error "--crew requires a tag"; return 1; }
                 crew="$2"; shift 2 ;;
             --restart) restart=true; shift ;;
-            --credential|--secret|--base-url|--cred-model|--dir|--account)
+            --credential|--secret|--base-url|--cred-model|--dir|--account|--fallback)
                 [[ $# -lt 2 ]] && { print_error "$1 requires a value"; return 1; }
                 pass+=("$1" "$2"); shift 2 ;;
             -*) print_error "Unknown option: $1"; return 1 ;;
