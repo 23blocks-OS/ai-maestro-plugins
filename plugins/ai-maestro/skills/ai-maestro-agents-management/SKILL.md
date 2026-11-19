@@ -59,6 +59,7 @@ aimaestro-agent.sh credential switch ops-1 ops-2 --credential host-login --resta
 aimaestro-agent.sh credential switch --crew team:ops --credential oauth-token --secret ACME_MAX_TOKEN --restart
 ```
 
+- `--fallback A,B` (with `--credential`) lists other vault entries this agent may use when its account hits a usage limit. AI Maestro then moves it to the first free one, restarts it in the same conversation and tells it to continue; `lastSwitch` on the credential endpoint shows the move. Only names in the agent's own list are ever used, and adding a name can need approval (`secret.grant`).
 - A change takes effect only when the agent starts again. `--restart` restarts idle agents at once; an agent at work is skipped and named, and keeps its old account until it is restarted. To reset an agent onto its account, `restart` it (or `hibernate` then `wake`).
 - Claude Code ignores `CLAUDE_CODE_OAUTH_TOKEN` and `CLAUDE_CONFIG_DIR` in a project's `.claude/settings*.json` `env` block, and an old `ANTHROPIC_API_KEY` there wins over the setting. Never put a credential there. `create`, `update` and `wake` print a warning when such a file would defeat the choice; remove the entry.
 - Check what the running session really uses, not what a file says:
