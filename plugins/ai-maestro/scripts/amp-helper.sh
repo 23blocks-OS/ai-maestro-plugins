@@ -1046,11 +1046,35 @@ amp_verify_message() {
     method=$(echo "$msg" | jq -r '.local.verification.method // empty')
 
     keyfile=""
+    local notice_from=""
+    # A provider notice (AMP 07 "Provider Notices"): its from must be an address of the provider named in
+    # the signed payload, and it is checked with that provider's published key, never a key looked up for
+    # the address. A notice that fails is not verified.
+    if [ "$(echo "${from%%@*}" | tr '[:upper:]' '[:lower:]')" = "_provider" ]; then
+        local prov lfrom
+        prov=$(echo "$msg" | jq -r '.payload.context.provider // empty' | tr '[:upper:]' '[:lower:]')
+        lfrom=$(echo "$from" | tr '[:upper:]' '[:lower:]')
+        if [ -z "$prov" ] || [ "${lfrom%".${prov}"}" = "$lfrom" ]; then
+            AMP_VERIFY_STATE="BAD SIGNATURE"; AMP_VERIFY_NOTE="a provider notice whose sender is not an address of the provider it names"
+            return 0
+        fi
+        notice_from="$prov"
+        if [ "$method" != "mesh-forwarded" ]; then
+            keyfile=$(amp_provider_key_file "$prov" 2>/dev/null) || keyfile=""
+        fi
     # Mail forwarded by another host names the recipient by bare name, so the signed
     # text cannot be rebuilt here; the server that received it checked it.
-    if [ "$method" != "mesh-forwarded" ]; then
+    elif [ "$method" != "mesh-forwarded" ]; then
         keyfile=$(amp_sender_key_file "$from" 2>/dev/null) || keyfile=""
     fi
+
+    # The body as the sender signed it. Delivery adds an empty attachment list and,
+    # on the server path, a null context; it drops local attachment paths and adds a
+    # security note. Undo those, trying the payload with and without null fields.
+    local base_filter='.payload | del(.security)
+        | if has("attachments") then .attachments |= map(del(.local_path)) else . end
+        | if (.attachments // null) == [] then del(.attachments) else . end'
+    local variant
 
     if [ -z "$keyfile" ]; then
         case "$recorded" in
@@ -1075,17 +1099,11 @@ amp_verify_message() {
     priority=$(echo "$msg" | jq -r '.envelope.priority // "normal"')
     reply_to=$(echo "$msg" | jq -r '.envelope.in_reply_to // empty')
 
-    # The payload as the sender signed it. Delivery adds an empty attachment list and,
-    # on the server path, a null context; it drops local attachment paths and adds a
-    # security note. Undo those, trying the payload with and without null fields.
-    local base_filter='.payload | del(.security)
-        | if has("attachments") then .attachments |= map(del(.local_path)) else . end
-        | if (.attachments // null) == [] then del(.attachments) else . end'
-    local variant
     for variant in "$base_filter" "$base_filter | with_entries(select(.value != null))"; do
         hash=$(echo "$msg" | jq -cS "$variant" | tr -d '\n' | $OPENSSL_BIN dgst -sha256 -binary | base64 | tr -d '\n')
         if verify_signature "${from}|${to}|${subject}|${priority}|${reply_to}|${hash}" "$sig" "$keyfile"; then
             AMP_VERIFY_STATE="VERIFIED"; AMP_VERIFY_NOTE="signed with the key registered for ${from}"
+            [ -n "$notice_from" ] && AMP_VERIFY_NOTE="a notice from ${notice_from}, signed with its published provider key"
             return 0
         fi
     done
@@ -1099,7 +1117,32 @@ amp_verify_message() {
     fi
     AMP_VERIFY_STATE="BAD SIGNATURE"
     AMP_VERIFY_NOTE="the signature does not match the key registered for ${from}"
+    [ -n "$notice_from" ] && AMP_VERIFY_NOTE="the signature does not match the provider key ${notice_from} publishes"
     return 0
+}
+
+# The public key a provider publishes (AMP 06 discovery), cached for an hour. A *.local provider is the
+# AI Maestro this agent talks to (/api/v1/info); any other is https://<p>/.well-known/agent-messaging.json,
+# then https://api.<p>/... A document that names another provider is ignored. Prints the PEM file path.
+amp_provider_key_file() {
+    local p="$1" dir f doc url
+    case "$p" in *[!a-z0-9.-]*|"") return 1 ;; esac
+    dir="${AMP_DIR:-$HOME/.agent-messaging}/providers"; f="${dir}/${p}.pem"
+    if [ -s "$f" ] && [ -z "$(find "$f" -mmin +60 2>/dev/null)" ]; then echo "$f"; return 0; fi
+    mkdir -p "$dir"
+    case "$p" in
+        *.local) doc=$(curl -sf --connect-timeout 3 --max-time 5 "${AMP_MAESTRO_URL}/api/v1/info" 2>/dev/null) ;;
+        *) doc=""
+           for url in "https://${p}/.well-known/agent-messaging.json" "https://api.${p}/.well-known/agent-messaging.json"; do
+               doc=$(curl -sf --proto '=https' --max-redirs 0 --connect-timeout 3 --max-time 5 "$url" 2>/dev/null) || { doc=""; continue; }
+               echo "$doc" | jq -e --arg p "$p" '((.provider // $p) | ascii_downcase | . == $p or endswith("." + $p)) and (.public_key | type == "string")' >/dev/null 2>&1 && break
+               doc=""
+           done ;;
+    esac
+    if echo "$doc" | jq -er '.public_key // empty' > "${f}.tmp" 2>/dev/null && [ -s "${f}.tmp" ]; then
+        mv "${f}.tmp" "$f"; echo "$f"; return 0
+    fi
+    rm -f "${f}.tmp"; return 1
 }
 
 # =============================================================================
