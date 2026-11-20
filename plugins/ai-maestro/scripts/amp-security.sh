@@ -197,15 +197,8 @@ apply_content_security() {
 
     local flags_count=$(echo "$injection_flags" | jq 'length')
 
-    # Determine if wrapping is needed
-    local wrapped=false
-    local final_content="$content"
-
-    if [ "$trust" = "external" ] || [ "$trust" = "untrusted" ]; then
-        # MUST wrap external/untrusted content (protocol requirement)
-        final_content=$(wrap_content "$content" "$from_address" "$trust" "$injection_flags")
-        wrapped=true
-    fi
+    # The stored payload stays exactly as signed (AMP 04 "Stored Message Format"), so the signature can be
+    # checked again later. Wrapping is done where the content is shown to a model: presented_body below.
 
     # Build security metadata
     local verified_at=""
@@ -218,24 +211,56 @@ apply_content_security() {
 
     # Update message with security metadata
     local updated_message=$(echo "$message_json" | jq \
-        --arg content "$final_content" \
         --arg trust "$trust" \
         --argjson flags "$flag_categories" \
-        --argjson wrapped "$wrapped" \
         --arg verified_at "$verified_at" \
         '
-        .payload.message = $content |
         .local = (.local // {}) + {
             security: {
                 trust: $trust,
                 injection_flags: $flags,
-                wrapped: $wrapped,
+                wrapped: false,
                 verified_at: (if $verified_at == "" then null else $verified_at end)
             }
+        } |
+        .security = (.security // {}) + {
+            trust_level: $trust,
+            injection_flags: $flags
         }
         ')
 
     echo "$updated_message"
+}
+
+# =============================================================================
+# Presenting a stored message (AMP 07 "Where wrapping applies")
+# =============================================================================
+
+# The trust level of a stored message: what the receiver recorded (security.trust_level, or local.security.trust
+# in older stores), and always untrusted when the signature did not check out here.
+# Args: message_json, verify_state (from amp_verify_message, may be empty)
+message_trust() {
+    local message_json="$1" verify_state="${2:-}"
+    if [ "$verify_state" = "BAD SIGNATURE" ]; then echo "untrusted"; return; fi
+    echo "$message_json" | jq -r '.security.trust_level // .local.security.trust // empty'
+}
+
+# The message text as it may be shown to a model: wrapped when the message is external or untrusted, unless the
+# stored text is already wrapped (stores written before the payload was kept as signed).
+# Args: message_json, verify_state
+presented_body() {
+    local message_json="$1" verify_state="${2:-}" body trust from
+    body=$(echo "$message_json" | jq -r '.payload.message // ""')
+    trust=$(message_trust "$message_json" "$verify_state")
+    case "$trust" in
+        external|untrusted)
+            if [ "$(is_content_wrapped "$body")" != "true" ]; then
+                from=$(echo "$message_json" | jq -r '.envelope.from // empty')
+                wrap_content "$body" "$from" "$trust" "$(detect_injection_patterns "$body")"
+                return
+            fi ;;
+    esac
+    printf '%s\n' "$body"
 }
 
 # =============================================================================

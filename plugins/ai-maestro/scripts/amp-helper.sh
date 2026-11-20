@@ -1077,9 +1077,34 @@ amp_verify_message() {
     local variant
 
     if [ -z "$keyfile" ]; then
+        # The server checked the signature. Check that the stored body is the one it checked (AMP 04 "Stored
+        # Message Format": security.payload_hash). A store that keeps the payload as signed has that field, and a
+        # body that no longer hashes to it was changed after the check. Older stores wrapped or rebuilt the body,
+        # so for them a matching hash is reported and a mismatch is not held against the message.
+        local stored_check=""
+        if [ "$recorded" = "verified" ]; then
+            local want got
+            want=$(echo "$msg" | jq -r '.security.payload_hash // empty')
+            if [ -n "$want" ]; then
+                got=$(echo "$msg" | jq -cS '.payload' | tr -d '\n' | $OPENSSL_BIN dgst -sha256 -binary | base64 | tr -d '\n')
+                if [ "$got" != "$want" ]; then
+                    AMP_VERIFY_STATE="BAD SIGNATURE"; AMP_VERIFY_NOTE="the body was changed after the server checked the signature"
+                    return 0
+                fi
+                stored_check="; body unchanged since"
+            else
+                want=$(echo "$msg" | jq -r '.local.verification.payload_sha256 // empty')
+                if [ -n "$want" ]; then
+                    for variant in "$base_filter" "$base_filter | with_entries(select(.value != null))"; do
+                        got=$(echo "$msg" | jq -cS "$variant" | tr -d '\n' | $OPENSSL_BIN dgst -sha256 -binary | base64 | tr -d '\n')
+                        if [ "$got" = "$want" ]; then stored_check="; body unchanged since"; break; fi
+                    done
+                fi
+            fi
+        fi
         case "$recorded" in
             verified)
-                AMP_VERIFY_STATE="VERIFIED"; AMP_VERIFY_NOTE="checked by the AI Maestro server when it delivered the message"
+                AMP_VERIFY_STATE="VERIFIED"; AMP_VERIFY_NOTE="checked by the AI Maestro server when it delivered the message${stored_check}"
                 # A person (AMP spec 13) signs on one of their approved devices; only their own agents take it as an instruction
                 if [ "$(echo "$msg" | jq -r '.local.verification.sender_kind // empty')" = "person" ]; then
                     if [ "$(echo "$msg" | jq -r '.local.verification.operator // false')" = "true" ]; then

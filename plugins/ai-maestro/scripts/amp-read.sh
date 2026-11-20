@@ -140,12 +140,17 @@ if [ "$BOX" = "inbox" ]; then
     amp_verify_message "$MESSAGE" 2>/dev/null || true
 fi
 
-# JSON output
+# The text as it may be shown to a model: external and untrusted content is wrapped here, never in the store
+# (AMP 07 "Where wrapping applies")
+PRESENTED=$(presented_body "$MESSAGE" "$AMP_VERIFY_STATE")
+
+# JSON output: also a view for the agent, so it carries the presented text; the stored file keeps the signed one
 if [ "$JSON_OUTPUT" = true ]; then
+    out=$(echo "$MESSAGE" | jq --arg p "$PRESENTED" 'if ((.payload.message // "") | sub("\\n+$"; "")) != $p then .payload.message = $p | .local.presented_wrapped = true else . end')
     if [ -n "$AMP_VERIFY_STATE" ]; then
-        echo "$MESSAGE" | jq --arg s "$AMP_VERIFY_STATE" --arg n "$AMP_VERIFY_NOTE" '. + {verification: {state: $s, note: $n}}'
+        echo "$out" | jq --arg s "$AMP_VERIFY_STATE" --arg n "$AMP_VERIFY_NOTE" '. + {verification: {state: $s, note: $n}}'
     else
-        echo "$MESSAGE"
+        echo "$out"
     fi
     exit 0
 fi
@@ -161,7 +166,7 @@ thread_id=$(echo "$MESSAGE" | jq -r '.envelope.thread_id')
 in_reply_to=$(echo "$MESSAGE" | jq -r '.envelope.in_reply_to // empty')
 
 msg_type=$(echo "$MESSAGE" | jq -r '.payload.type // "notification"')
-body=$(echo "$MESSAGE" | jq -r '.payload.message')
+body="$PRESENTED"
 context=$(echo "$MESSAGE" | jq '.payload.context // null')
 
 status=$(echo "$MESSAGE" | jq -r '(.local.status // .metadata.status // "unread")')
