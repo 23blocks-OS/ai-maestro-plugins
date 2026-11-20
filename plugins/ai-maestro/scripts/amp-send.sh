@@ -494,6 +494,8 @@ send_via_api() {
     http_code=$(echo "$response" | tail -n1)
     local body
     body=$(echo "$response" | sed '$d')
+    SEND_HTTP_CODE="$http_code"
+    [ "$http_code" = "000" ] && [ "${SEND_QUIET_UNREACHABLE:-false}" = true ] && return 1
 
     if [ "$http_code" = "200" ] || [ "$http_code" = "201" ] || [ "$http_code" = "202" ]; then
         save_to_sent "$MESSAGE_JSON" >/dev/null
@@ -543,6 +545,18 @@ is_local_provider_registration() {
     [[ "$provider_name" == *.local ]]
 }
 
+# AI Maestro's message rules: a direct write into another agent's inbox would skip them, so it is refused when
+# this host has rules (a deleted rules file still counts while its saved copy is there)
+host_has_message_rules() {
+    local f="${AIMAESTRO_POLICY_FILE:-$HOME/.aimaestro/policy.json}"
+    [ -f "$f" ] || [ -f "${f}.last-good" ]
+}
+refuse_direct_write() {
+    echo "❌ Not sent: the provider at ${1} is not answering, and this host has message rules"
+    echo "   (~/.aimaestro/policy.json) that a direct write would skip. Start AI Maestro and send again."
+    exit 1
+}
+
 # =============================================================================
 # Routing Decision
 # =============================================================================
@@ -580,8 +594,22 @@ if [ "$ROUTE" = "local" ]; then
             RECIPIENT_AMP_DIR="${AGENTS_BASE_DIR}/${ADDR_NAME}"
         fi
 
-        if [ -d "${RECIPIENT_AMP_DIR}" ] && [ -f "${RECIPIENT_AMP_DIR}/config.json" ]; then
-            # Recipient IS on this machine — deliver directly via filesystem
+        REGISTRATION=$(cat "$LOCAL_PROVIDER_REG")
+        API_URL=$(echo "$REGISTRATION" | jq -r '.apiUrl')
+        API_KEY=$(echo "$REGISTRATION" | jq -r '.apiKey')
+        ROUTE_URL=$(echo "$REGISTRATION" | jq -r '.routeUrl // empty')
+        SEND_URL="${ROUTE_URL:-${API_URL}/route}"
+        RECIPIENT_HERE=false
+        [ -d "${RECIPIENT_AMP_DIR}" ] && [ -f "${RECIPIENT_AMP_DIR}/config.json" ] && RECIPIENT_HERE=true
+
+        # The provider delivers, to this machine too (AMP 05): it applies the host's rules, knows the sender by its
+        # API key and wakes the recipient. Only when it does not answer is a recipient here written directly.
+        SEND_QUIET_UNREACHABLE=$RECIPIENT_HERE
+        if send_via_api "$SEND_URL" "$API_KEY" "$FULL_RECIPIENT" "AMP routing"; then
+            :
+        elif [ "$RECIPIENT_HERE" = true ] && [ "$SEND_HTTP_CODE" = "000" ]; then
+            host_has_message_rules && refuse_direct_write "$API_URL"
+            echo "  The provider at ${API_URL} is not answering; delivering straight to the recipient's inbox."
             save_to_sent "$MESSAGE_JSON" >/dev/null
             MSG_ID=$(echo "$MESSAGE_JSON" | jq -r '.envelope.id')
 
@@ -620,14 +648,7 @@ if [ "$ROUTE" = "local" ]; then
                 echo "  Attach:   ${local_att_count} file(s)"
             fi
         else
-            # Recipient NOT on this machine — use provider API for cross-host routing
-            REGISTRATION=$(cat "$LOCAL_PROVIDER_REG")
-            API_URL=$(echo "$REGISTRATION" | jq -r '.apiUrl')
-            API_KEY=$(echo "$REGISTRATION" | jq -r '.apiKey')
-            ROUTE_URL=$(echo "$REGISTRATION" | jq -r '.routeUrl // empty')
-
-            SEND_URL="${ROUTE_URL:-${API_URL}/route}"
-            send_via_api "$SEND_URL" "$API_KEY" "$FULL_RECIPIENT" "AMP routing" || exit 1
+            exit 1
         fi
 
     else
@@ -741,6 +762,7 @@ if [ "$ROUTE" = "local" ]; then
 
             if [ -d "${RECIPIENT_AMP_DIR}" ] && [ -f "${RECIPIENT_AMP_DIR}/config.json" ]; then
                 # Recipient IS on this machine - filesystem delivery is valid
+                host_has_message_rules && refuse_direct_write "${AMP_MAESTRO_URL}"
                 save_to_sent "$MESSAGE_JSON" >/dev/null
                 MSG_ID=$(echo "$MESSAGE_JSON" | jq -r '.envelope.id')
 
