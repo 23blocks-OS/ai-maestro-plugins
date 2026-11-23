@@ -23,7 +23,7 @@ Usage: aimaestro-call.sh [--agent <id>] <command> ...
 Commands:
   people                                   The people you can call, from every host you can reach
   person "<name, email or person id>" [--ttl <seconds>]
-                                           Ring that person's phones; prints the call id. Rings for 30 s
+                                           Ring that person's phones; prints the call id. Rings for 75 s
                                            by default (at most 120)
   status <callId>                          The call's state
   wait <callId> [--timeout <seconds>]      Wait until the call is answered or over (default 60 s)
@@ -109,7 +109,7 @@ case "$CMD" in
     [ -n "$AGENT" ] || die "no agent id: set AIM_AGENT_ID or pass --agent"
     WHO="${1:-}"; [ -n "$WHO" ] || die "person needs a name, email or person id"
     shift
-    TTL=30
+    TTL=75  # 30 s ran out before a phone could reach the call
     while [ $# -gt 0 ]; do
       case "$1" in
         --ttl) [ $# -ge 2 ] || die "--ttl needs a value"; TTL="$2"; shift 2 ;;
