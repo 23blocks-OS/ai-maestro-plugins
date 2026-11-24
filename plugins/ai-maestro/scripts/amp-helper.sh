@@ -989,6 +989,100 @@ sign_message() {
     fi
 }
 
+# =============================================================================
+# Registration: prove the key when the provider asks for it (AMP spec 03)
+# =============================================================================
+# A public key is public, so a provider gives a new API key for a name that is
+# already registered only to the agent itself. Outside the agent's own session
+# AI Maestro answers 401 proof_required with the values to sign in details;
+# this signs, with this agent's key,
+#   "amp-register-proof\n" + timestamp + "\n" + provider + "\n" + tenant + "\n" + name + "\n" + fingerprint
+# and sends the same registration once more with
+#   "proof": base64url(signature + timestamp)
+# It signs only for the name being registered, and only when the fingerprint the
+# provider names is this agent's own. Any other answer is returned as it came.
+#
+# amp_register_request <url> <json body> [<Authorization header line>] [curl options...]
+# Prints the response body, a newline and the HTTP code, like curl -w "\n%{http_code}".
+
+# SHA256: + base64 of the SHA-256 of the 32 raw key bytes
+amp_register_fingerprint() {
+    local pub="$1" fp
+    [ -f "$pub" ] || return 1
+    fp=$($OPENSSL_BIN pkey -pubin -in "$pub" -outform DER 2>/dev/null | tail -c 32 | \
+         $OPENSSL_BIN dgst -sha256 -binary | base64 | tr -d '\n')
+    [ -n "$fp" ] || return 1
+    echo "SHA256:${fp}"
+}
+
+_amp_register_post() {
+    local url="$1" body="$2" auth="$3"; shift 3
+    # Headers go in on stdin, so a key never shows on curl's command line
+    { printf 'Content-Type: application/json\n'; [ -n "$auth" ] && printf '%s\n' "$auth"; } | \
+        curl -s -w "\n%{http_code}" "$@" -X POST "$url" -H @- -d "$body" 2>/dev/null || true
+}
+
+amp_register_request() {
+    local url="$1" body="$2" auth="${3:-}"
+    shift 2; if [ $# -gt 0 ]; then shift; fi
+
+    local response code rbody
+    response=$(_amp_register_post "$url" "$body" "$auth" "$@")
+    code=$(printf '%s\n' "$response" | tail -n1)
+    rbody=$(printf '%s\n' "$response" | sed '$d')
+    if [ "$code" != "401" ] || \
+       [ "$(printf '%s' "$rbody" | jq -r '.error // empty' 2>/dev/null)" != "proof_required" ]; then
+        printf '%s\n' "$response"
+        return 0
+    fi
+
+    local provider tenant name fp want_name my_fp
+    provider=$(printf '%s' "$rbody" | jq -r '.details.provider // empty' 2>/dev/null)
+    tenant=$(printf '%s' "$rbody" | jq -r '.details.tenant // empty' 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    name=$(printf '%s' "$rbody" | jq -r '.details.name // empty' 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    fp=$(printf '%s' "$rbody" | jq -r '.details.fingerprint // empty' 2>/dev/null)
+    want_name=$(printf '%s' "$body" | jq -r '.name // empty' 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    my_fp=$(amp_register_fingerprint "${AMP_KEYS_DIR}/public.pem" 2>/dev/null) || my_fp=""
+
+    if [ -z "$provider" ] || [ -z "$tenant" ] || [ -z "$name" ] || [ "$name" != "$want_name" ] || \
+       [ -z "$my_fp" ] || [ "$fp" != "$my_fp" ]; then
+        echo "  '${want_name}' is already registered there, and the provider asks for a proof this agent's key cannot give" >&2
+        echo "  (it names another name or key, or this agent has no key here). Nothing was signed." >&2
+        printf '%s\n' "$response"
+        return 0
+    fi
+
+    local ts tmp_msg tmp_sig proof body2
+    ts=$(date +%s)
+    tmp_msg=$(mktemp); tmp_sig=$(mktemp)
+    printf 'amp-register-proof\n%s\n%s\n%s\n%s\n%s' "$ts" "$provider" "$tenant" "$name" "$fp" > "$tmp_msg"
+    proof=""
+    if $OPENSSL_BIN pkeyutl -sign -inkey "${AMP_KEYS_DIR}/private.pem" -rawin -in "$tmp_msg" -out "$tmp_sig" 2>/dev/null; then
+        printf '%s' "$ts" >> "$tmp_sig"
+        proof=$(base64 < "$tmp_sig" | tr -d '\n=' | tr '+/' '-_')
+    fi
+    rm -f "$tmp_msg" "$tmp_sig"
+    if [ -z "$proof" ]; then
+        echo "  '${want_name}' is already registered; proving it needs this agent's private key, and signing failed." >&2
+        printf '%s\n' "$response"
+        return 0
+    fi
+
+    body2=$(printf '%s' "$body" | jq -c --arg p "$proof" '. + {proof: $p}')
+    response=$(_amp_register_post "$url" "$body2" "$auth" "$@")
+    code=$(printf '%s\n' "$response" | tail -n1)
+    case "$code" in
+        200|201) ;;
+        *)
+            rbody=$(printf '%s\n' "$response" | sed '$d')
+            echo "  '${want_name}' is already registered; the provider did not accept the proof of this agent's key" >&2
+            echo "  (HTTP ${code}: $(printf '%s' "$rbody" | jq -r '[.error, .message] | map(select(. != null)) | join(": ")' 2>/dev/null))." >&2
+            echo "  Run the command in the agent's own session." >&2
+            ;;
+    esac
+    printf '%s\n' "$response"
+}
+
 # Verify a signature
 verify_signature() {
     local message="$1"

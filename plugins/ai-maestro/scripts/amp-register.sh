@@ -272,16 +272,9 @@ fi
 
 # Send registration request
 echo "Sending registration request..."
-if [ -n "$AUTH_HEADER" ]; then
-    RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${API_URL}/v1/register" \
-        -H "Content-Type: application/json" \
-        -H "$AUTH_HEADER" \
-        -d "$REG_REQUEST" 2>&1)
-else
-    RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${API_URL}/v1/register" \
-        -H "Content-Type: application/json" \
-        -d "$REG_REQUEST" 2>&1)
-fi
+# A name that is already registered there may need a proof of this agent's key
+# (AMP spec 03; AI Maestro outside the agent's own session): amp_register_request in amp-helper.sh
+RESPONSE=$(amp_register_request "${API_URL}/v1/register" "$REG_REQUEST" "$AUTH_HEADER")
 
 HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
 BODY=$(echo "$RESPONSE" | sed '$d')

@@ -509,10 +509,9 @@ if [ "$_DO_FRESH_REGISTRATION" = true ]; then
         } + (if $workdir != "" then {metadata: {working_directory: $workdir}} else {} end)')
 
     # Try to register with local AI Maestro
-    REG_RESPONSE=$(curl -s -w "\n%{http_code}" --connect-timeout 3 -X POST \
-        "${AMP_MAESTRO_URL}/api/v1/register" \
-        -H "Content-Type: application/json" \
-        -d "$REG_REQUEST" 2>&1) || true
+    # (a re-run outside the agent's own session proves the key: amp_register_request in amp-helper.sh)
+    REG_RESPONSE=$(amp_register_request "${AMP_MAESTRO_URL}/api/v1/register" "$REG_REQUEST" "" \
+        --connect-timeout 3) || true
 
     REG_HTTP_CODE=$(echo "$REG_RESPONSE" | tail -n1)
     REG_BODY=$(echo "$REG_RESPONSE" | sed '$d')
