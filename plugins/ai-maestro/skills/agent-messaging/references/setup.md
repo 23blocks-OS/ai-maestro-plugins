@@ -92,3 +92,5 @@ amp-register.sh --provider aimaestro.local --tenant myorg --api-url http://local
 ```
 
 Without `/api` the provider returns 404, which looks like the provider is down.
+
+Registering a name that already exists, from outside that agent's own session, needs a proof of its key: the scripts sign it with the agent's key when the provider answers `proof_required` (AMP 03).

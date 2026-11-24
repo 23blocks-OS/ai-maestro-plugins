@@ -681,10 +681,9 @@ if [ "$ROUTE" = "local" ]; then
                     key_algorithm: "Ed25519"
                 }')
 
-            AUTO_REG_RESPONSE=$(curl -s -w "\n%{http_code}" --connect-timeout 3 -X POST \
-                "${AMP_MAESTRO_URL}/api/v1/register" \
-                -H "Content-Type: application/json" \
-                -d "$AUTO_REG_REQUEST" 2>&1) || true
+            # (a name already registered outside its own session proves the key: amp_register_request)
+            AUTO_REG_RESPONSE=$(amp_register_request "${AMP_MAESTRO_URL}/api/v1/register" "$AUTO_REG_REQUEST" "" \
+                --connect-timeout 3) || true
 
             AUTO_REG_HTTP=$(echo "$AUTO_REG_RESPONSE" | tail -n1)
             AUTO_REG_BODY=$(echo "$AUTO_REG_RESPONSE" | sed '$d')
