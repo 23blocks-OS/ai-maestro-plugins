@@ -29,7 +29,7 @@ fi
 # Make the POST request
 RESPONSE=$(curl -s --max-time 120 -X POST \
     -H "Content-Type: application/json" \
-    -d "$BODY" \
+    -d @- <<<"$BODY" \
     "${API_BASE}/api/agents/${AGENT_ID}/graph/code" 2>/dev/null)
 
 if [ -z "$RESPONSE" ]; then

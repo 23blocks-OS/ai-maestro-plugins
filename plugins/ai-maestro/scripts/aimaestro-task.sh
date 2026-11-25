@@ -127,7 +127,7 @@ call() {
   # A path starting with http is already a full address (a project card lives on its project's host)
   case "$path" in http*) url="$path" ;; *) url="${API}${path}" ;; esac
   if [ -n "$body" ]; then
-    out=$(curl -sS --max-time 15 -X "$method" -H 'Content-Type: application/json' -d "$body" -w '\n%{http_code}' "$url" 2>&1) || die "Could not reach AI Maestro at ${url%%/api/*}: ${out}"
+    out=$(curl -sS --max-time 15 -X "$method" -H 'Content-Type: application/json' -d @- <<<"$body" -w '\n%{http_code}' "$url" 2>&1) || die "Could not reach AI Maestro at ${url%%/api/*}: ${out}"
   else
     out=$(curl -sS --max-time 15 -X "$method" -w '\n%{http_code}' "$url" 2>&1) || die "Could not reach AI Maestro at ${url%%/api/*}: ${out}"
   fi
@@ -426,7 +426,7 @@ case "$CMD" in
            elif .quadrant == "q3" then {urgent: true, important: false}
            elif .quadrant == "q4" then {urgent: false, important: false}
            else {} end)')
-      if out=$(curl -sS --max-time 15 -X POST -H 'Content-Type: application/json' -d "$body" -w '\n%{http_code}' "${API}/api/agents/${AGENT}/tasks" 2>&1) && case "${out##*$'\n'}" in 2*) true ;; *) false ;; esac; then
+      if out=$(curl -sS --max-time 15 -X POST -H 'Content-Type: application/json' -d @- <<<"$body" -w '\n%{http_code}' "${API}/api/agents/${AGENT}/tasks" 2>&1) && case "${out##*$'\n'}" in 2*) true ;; *) false ;; esac; then
         added=$((added + 1)); seen_new=$(printf '%s' "$seen_new" | jq -c --arg s "$subj" '. + [$s]')
       else
         failed=$((failed + 1)); echo "Failed: $subj: $(printf '%s' "${out%$'\n'*}" | jq -r '.message // .error // empty' 2>/dev/null)" >&2
