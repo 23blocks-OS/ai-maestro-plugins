@@ -139,25 +139,15 @@ echo -e "${BLUE}Package Contents:${NC}"
 if command -v unzip &> /dev/null; then
     MANIFEST=$(unzip -p "$ZIP_FILE" manifest.json 2>/dev/null || echo "{}")
     if [ ! -z "$MANIFEST" ] && [ "$MANIFEST" != "{}" ]; then
-        echo "$MANIFEST" | python3 -c "
-import sys, json
-try:
-    m = json.load(sys.stdin)
-    print(f\"  Agent: {m.get('agent', {}).get('alias', 'Unknown')} ({m.get('agent', {}).get('id', 'Unknown')[:8]}...)\")
-    print(f\"  Display Name: {m.get('agent', {}).get('displayName', 'N/A')}\")
-    print(f\"  Exported: {m.get('exportedAt', 'Unknown')}\")
-    print(f\"  From: {m.get('exportedFrom', {}).get('hostname', 'Unknown')} ({m.get('exportedFrom', {}).get('platform', 'Unknown')})\")
-    c = m.get('contents', {})
-    print(f\"  Database: {'Yes' if c.get('hasDatabase') else 'No'}\")
-    if c.get('hasMessages'):
-        stats = c.get('messageStats', {})
-        total = stats.get('inbox', 0) + stats.get('sent', 0) + stats.get('archived', 0)
-        print(f\"  Messages: {total} total ({stats.get('inbox', 0)} inbox, {stats.get('sent', 0)} sent, {stats.get('archived', 0)} archived)\")
-    else:
-        print(f\"  Messages: None\")
-except Exception as e:
-    print(f\"  (Could not parse manifest: {e})\")
-" 2>/dev/null || echo "  (Could not parse manifest)"
+        echo "$MANIFEST" | jq -r '
+            "  Agent: \(.agent.alias // "Unknown") (\((.agent.id // "Unknown")[0:8])...)",
+            "  Display Name: \(.agent.displayName // "N/A")",
+            "  Exported: \(.exportedAt // "Unknown")",
+            "  From: \(.exportedFrom.hostname // "Unknown") (\(.exportedFrom.platform // "Unknown"))",
+            "  Database: \(if .contents.hasDatabase then "Yes" else "No" end)",
+            (.contents.messageStats // {}) as $s
+            | if .contents.hasMessages then "  Messages: \(($s.inbox // 0) + ($s.sent // 0) + ($s.archived // 0)) total (\($s.inbox // 0) inbox, \($s.sent // 0) sent, \($s.archived // 0) archived)" else "  Messages: None" end
+        ' 2>/dev/null || echo "  (Could not parse manifest)"
     fi
 fi
 
@@ -186,42 +176,27 @@ RESPONSE=$(curl -s \
     "${AIMAESTRO_API}/api/agents/import")
 
 # Parse response
-SUCCESS=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('success', False))" 2>/dev/null || echo "false")
+SUCCESS=$(echo "$RESPONSE" | jq -r '.success // false' 2>/dev/null || echo "false")
 
 if [ "$SUCCESS" = "True" ] || [ "$SUCCESS" = "true" ]; then
     echo ""
     echo -e "${GREEN}Import successful!${NC}"
 
     # Show imported agent details
-    echo "$RESPONSE" | python3 -c "
-import sys, json
-try:
-    r = json.load(sys.stdin)
-    agent = r.get('agent', {})
-    stats = r.get('stats', {})
-    warnings = r.get('warnings', [])
-
-    print(f\"\nImported Agent:\")
-    print(f\"  ID: {agent.get('id', 'Unknown')}\")
-    print(f\"  Alias: {agent.get('alias', 'Unknown')}\")
-    print(f\"  Display Name: {agent.get('displayName', 'N/A')}\")
-    print(f\"  Program: {agent.get('program', 'Unknown')}\")
-
-    print(f\"\nImport Stats:\")
-    print(f\"  Registry: {'Yes' if stats.get('registryImported') else 'No'}\")
-    print(f\"  Database: {'Yes' if stats.get('databaseImported') else 'No'}\")
-    msgs = stats.get('messagesImported', {})
-    total_msgs = msgs.get('inbox', 0) + msgs.get('sent', 0) + msgs.get('archived', 0)
-    if total_msgs > 0:
-        print(f\"  Messages: {total_msgs} ({msgs.get('inbox', 0)} inbox, {msgs.get('sent', 0)} sent, {msgs.get('archived', 0)} archived)\")
-
-    if warnings:
-        print(f\"\nWarnings:\")
-        for w in warnings:
-            print(f\"  - {w}\")
-except Exception as e:
-    print(f\"(Could not parse response: {e})\")
-" 2>/dev/null || true
+    echo "$RESPONSE" | jq -r '
+        (.agent // {}) as $a | (.stats // {}) as $st | (.stats.messagesImported // {}) as $m
+        | "\nImported Agent:",
+          "  ID: \($a.id // "Unknown")",
+          "  Alias: \($a.alias // "Unknown")",
+          "  Display Name: \($a.displayName // "N/A")",
+          "  Program: \($a.program // "Unknown")",
+          "\nImport Stats:",
+          "  Registry: \(if $st.registryImported then "Yes" else "No" end)",
+          "  Database: \(if $st.databaseImported then "Yes" else "No" end)",
+          (($m.inbox // 0) + ($m.sent // 0) + ($m.archived // 0)) as $t
+          | (if $t > 0 then "  Messages: \($t) (\($m.inbox // 0) inbox, \($m.sent // 0) sent, \($m.archived // 0) archived)" else empty end),
+          (if ((.warnings // []) | length) > 0 then "\nWarnings:", ((.warnings // [])[] | "  - \(.)") else empty end)
+    ' 2>/dev/null || true
 
     echo ""
     echo -e "${GREEN}The agent is now available in AI Maestro.${NC}"
@@ -232,27 +207,12 @@ else
     echo -e "${RED}Import failed!${NC}"
 
     # Show error details
-    echo "$RESPONSE" | python3 -c "
-import sys, json
-try:
-    r = json.load(sys.stdin)
-    errors = r.get('errors', [])
-    if errors:
-        print('Errors:')
-        for e in errors:
-            print(f'  - {e}')
-    else:
-        error = r.get('error', 'Unknown error')
-        print(f'Error: {error}')
-
-        # Check for existing agent conflict
-        existing_id = r.get('existingAgentId')
-        if existing_id:
-            print(f'\nExisting agent ID: {existing_id}')
-            print('Use --overwrite to replace, or --alias to use a different name.')
-except Exception as e:
-    print(f'Error: {e}')
-" 2>/dev/null || echo "Error: Could not parse server response"
+    echo "$RESPONSE" | jq -r '
+        if ((.errors // []) | length) > 0 then "Errors:", ((.errors)[] | "  - \(.)")
+        else "Error: \(.error // "Unknown error")",
+             (if .existingAgentId then "\nExisting agent ID: \(.existingAgentId)", "Use --overwrite to replace, or --alias to use a different name." else empty end)
+        end
+    ' 2>/dev/null || echo "Error: Could not parse server response"
 
     exit 1
 fi

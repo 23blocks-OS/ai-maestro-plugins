@@ -70,7 +70,7 @@ cmd_session_add() {
     local response
     response=$(curl -s --max-time 30 -X POST "${api_base}/api/agents/${RESOLVED_AGENT_ID}/session" \
         -H "Content-Type: application/json" \
-        -d "$payload")
+        -d @- <<<"$payload")
 
     local error
     error=$(echo "$response" | jq -r '.error // empty')
@@ -167,7 +167,7 @@ cmd_session_exec() {
     local response
     response=$(curl -s --max-time 30 -X PATCH "${api_base}/api/agents/${RESOLVED_AGENT_ID}/session" \
         -H "Content-Type: application/json" \
-        -d "$payload")
+        -d @- <<<"$payload")
 
     local error
     error=$(echo "$response" | jq -r '.error // empty')
@@ -264,7 +264,7 @@ cmd_wake() {
     local response
     response=$(curl -s --max-time 30 -X POST "${api_base}/api/agents/${RESOLVED_AGENT_ID}/wake" \
         -H "Content-Type: application/json" \
-        -d "$wake_payload")
+        -d @- <<<"$wake_payload")
 
     local error
     error=$(echo "$response" | jq -r '.error // empty')

@@ -27,7 +27,7 @@ NC='\033[0m' # No Color
 
 # Check for --json flag
 if [ "$1" = "--json" ]; then
-    curl -s "${AIMAESTRO_API}/api/agents" | python3 -c "import sys, json; print(json.dumps(json.load(sys.stdin), indent=2))" 2>/dev/null || curl -s "${AIMAESTRO_API}/api/agents"
+    curl -s "${AIMAESTRO_API}/api/agents" | jq . 2>/dev/null || curl -s "${AIMAESTRO_API}/api/agents"
     exit 0
 fi
 
@@ -46,57 +46,22 @@ if [ -z "$RESPONSE" ] || [ "$RESPONSE" = "null" ]; then
 fi
 
 # Parse and display agents
-echo "$RESPONSE" | python3 -c "
-import sys, json
-
-try:
-    data = json.load(sys.stdin)
-    agents = data.get('agents', [])
-
-    if not agents:
-        print('No agents found.')
-        print('')
-        print('Register agents using the AI Maestro dashboard or:')
-        print('  POST /api/agents/register')
-        sys.exit(0)
-
-    print(f'Found {len(agents)} agent(s):')
-    print('')
-
-    for agent in agents:
-        alias = agent.get('alias', 'Unknown')
-        agent_id = agent.get('id', 'Unknown')[:8]
-        display_name = agent.get('displayName', '')
-        status = agent.get('status', 'offline')
-        session = agent.get('currentSession', '')
-
-        # Status color
-        if status == 'active':
-            status_icon = '\033[32m●\033[0m'  # Green
-        elif status == 'idle':
-            status_icon = '\033[33m●\033[0m'  # Yellow
-        else:
-            status_icon = '\033[90m●\033[0m'  # Gray
-
-        # Format output
-        name_part = f'{alias}'
-        if display_name and display_name != alias:
-            name_part += f' ({display_name})'
-
-        print(f'{status_icon} {name_part}')
-        print(f'    ID: {agent_id}...')
-        if session:
-            print(f'    Session: {session}')
-        print(f'    Export: export-agent.sh {alias}')
-        print('')
-
-except json.JSONDecodeError:
-    print('Error: Invalid response from API')
-    sys.exit(1)
-except Exception as e:
-    print(f'Error: {e}')
-    sys.exit(1)
-"
+# jq, not python3: AI Maestro needs jq already, and Windows has no python3 (F041)
+echo "$RESPONSE" | jq -r '
+  (.agents // []) as $agents
+  | if ($agents | length) == 0 then
+      "No agents found.\n\nRegister agents using the AI Maestro dashboard or:\n  POST /api/agents/register\n"
+    else
+      "Found \($agents | length) agent(s):\n",
+      ($agents[]
+        | (.alias // .name // "Unknown") as $alias
+        | (if .status == "active" then "\u001b[32m●\u001b[0m" elif .status == "idle" then "\u001b[33m●\u001b[0m" else "\u001b[90m●\u001b[0m" end) as $icon
+        | "\($icon) \($alias)\(if (.displayName // "") != "" and .displayName != $alias then " (\(.displayName))" else "" end)",
+          "    ID: \((.id // "Unknown")[0:8])...",
+          (if (.currentSession // "") != "" then "    Session: \(.currentSession)" else empty end),
+          "    Export: export-agent.sh \($alias)",
+          "")
+    end' 2>/dev/null || { echo "Error: Invalid response from API"; exit 1; }
 
 echo -e "${BLUE}Commands:${NC}"
 echo -e "  export-agent.sh <alias>          Export an agent to ZIP"

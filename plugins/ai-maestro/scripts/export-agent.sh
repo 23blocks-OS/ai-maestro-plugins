@@ -84,7 +84,7 @@ if [ "$HTTP_CODE" != "200" ]; then
 
     # Try to parse error message from JSON
     if [ -f "$TEMP_FILE" ]; then
-        ERROR_MSG=$(cat "$TEMP_FILE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('error', 'Unknown error'))" 2>/dev/null || echo "Unknown error")
+        ERROR_MSG=$(jq -r '.error // "Unknown error"' "$TEMP_FILE" 2>/dev/null || echo "Unknown error")
         echo -e "${RED}$ERROR_MSG${NC}"
     fi
 
@@ -132,21 +132,13 @@ if command -v unzip &> /dev/null; then
     MANIFEST=$(unzip -p "$OUTPUT_PATH" manifest.json 2>/dev/null || echo "{}")
     if [ ! -z "$MANIFEST" ] && [ "$MANIFEST" != "{}" ]; then
         echo -e "${BLUE}Export Contents:${NC}"
-        echo "$MANIFEST" | python3 -c "
-import sys, json
-try:
-    m = json.load(sys.stdin)
-    print(f\"  Agent: {m.get('agent', {}).get('alias', 'Unknown')} ({m.get('agent', {}).get('id', 'Unknown')[:8]}...)\")
-    print(f\"  Exported: {m.get('exportedAt', 'Unknown')}\")
-    print(f\"  From: {m.get('exportedFrom', {}).get('hostname', 'Unknown')}\")
-    c = m.get('contents', {})
-    print(f\"  Database: {'Yes' if c.get('hasDatabase') else 'No'}\")
-    if c.get('hasMessages'):
-        stats = c.get('messageStats', {})
-        print(f\"  Messages: {stats.get('inbox', 0)} inbox, {stats.get('sent', 0)} sent, {stats.get('archived', 0)} archived\")
-except:
-    pass
-" 2>/dev/null || true
+        echo "$MANIFEST" | jq -r '
+            "  Agent: \(.agent.alias // "Unknown") (\((.agent.id // "Unknown")[0:8])...)",
+            "  Exported: \(.exportedAt // "Unknown")",
+            "  From: \(.exportedFrom.hostname // "Unknown")",
+            "  Database: \(if .contents.hasDatabase then "Yes" else "No" end)",
+            (if .contents.hasMessages then "  Messages: \(.contents.messageStats.inbox // 0) inbox, \(.contents.messageStats.sent // 0) sent, \(.contents.messageStats.archived // 0) archived" else empty end)
+        ' 2>/dev/null || true
     fi
 fi
 

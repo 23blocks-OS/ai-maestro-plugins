@@ -51,7 +51,7 @@ if [ "$MESSAGE" = "last" ]; then
 fi
 
 BODY=$(jq -n --arg m "$MESSAGE" --arg e "$EMOJI" --arg a "$AGENT" '{messageId: $m, emoji: $e, agentId: $a}')
-OUT=$(curl -sS -m 15 -X "$METHOD" -H 'Content-Type: application/json' --data "$BODY" -w '\n%{http_code}' "$BASE/reactions") || die "could not reach $API"
+OUT=$(curl -sS -m 15 -X "$METHOD" -H 'Content-Type: application/json' --data @- <<<"$BODY" -w '\n%{http_code}' "$BASE/reactions") || die "could not reach $API"
 CODE="${OUT##*$'\n'}"
 OUT="${OUT%$'\n'*}"
 if [ "$CODE" -ge 400 ] 2>/dev/null; then

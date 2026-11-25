@@ -679,7 +679,7 @@ HELP
     # MEDIUM-010: Add timeout to curl
     response=$(curl -s --max-time 30 -X POST "${api_base}/api/agents" \
         -H "Content-Type: application/json" \
-        -d "$payload")
+        -d @- <<<"$payload")
 
     # Check for error
     local error
@@ -906,7 +906,7 @@ HELP
     # MEDIUM-010: Add timeout to curl
     response=$(curl -s --max-time 30 -X PATCH "${api_base}/api/agents/${RESOLVED_AGENT_ID}" \
         -H "Content-Type: application/json" \
-        -d "$payload")
+        -d @- <<<"$payload")
 
     local error
     error=$(echo "$response" | jq -r '.error // empty')
@@ -998,7 +998,7 @@ HELP
     # MEDIUM-010: Add timeout to curl
     response=$(curl -s --max-time 30 -X PATCH "${api_base}/api/agents/${RESOLVED_AGENT_ID}" \
         -H "Content-Type: application/json" \
-        -d "$payload")
+        -d @- <<<"$payload")
 
     local error
     error=$(echo "$response" | jq -r '.error // empty')
@@ -1041,7 +1041,7 @@ HELP
                 dir_payload=$(jq -n --arg d "$new_dir" '{workingDirectory: $d}')
                 curl -s --max-time 30 -X PATCH "${api_base}/api/agents/${RESOLVED_AGENT_ID}" \
                     -H "Content-Type: application/json" \
-                    -d "$dir_payload" >/dev/null
+                    -d @- <<<"$dir_payload" >/dev/null
                 print_info "Renamed folder: $old_dir -> $new_dir"
             fi
         fi
@@ -1195,7 +1195,7 @@ HELP
     local response
     response=$(curl -s --max-time 30 -X POST "${api_base}/api/agents" \
         -H "Content-Type: application/json" \
-        -d "$agent_data")
+        -d @- <<<"$agent_data")
 
     local error
     error=$(echo "$response" | jq -r '.error // empty')

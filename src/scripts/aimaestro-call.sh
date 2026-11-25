@@ -54,7 +54,7 @@ shift
 call_api() {
   local method="$1" url="$2" body="${3:-}" out code
   if [ -n "$body" ]; then
-    out=$(curl -sS -m 15 -X "$method" -H 'Content-Type: application/json' --data "$body" -w '\n%{http_code}' "$url") || die "could not reach $url"
+    out=$(curl -sS -m 15 -X "$method" -H 'Content-Type: application/json' --data @- <<<"$body" -w '\n%{http_code}' "$url") || die "could not reach $url"
   else
     out=$(curl -sS -m 15 -X "$method" -w '\n%{http_code}' "$url") || die "could not reach $url"
   fi

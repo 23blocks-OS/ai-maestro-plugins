@@ -139,7 +139,7 @@ cmd_skill_add() {
     local response
     response=$(curl -s --max-time 30 -X POST "${api_base}/api/agents/${RESOLVED_AGENT_ID}/skills" \
         -H "Content-Type: application/json" \
-        -d "$payload")
+        -d @- <<<"$payload")
 
     local error
     error=$(echo "$response" | jq -r '.error // empty')
