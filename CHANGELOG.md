@@ -3,6 +3,10 @@
 All notable changes to AI Maestro Plugins are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+- Native Windows (AI Maestro F041, Git Bash): request bodies go to curl on stdin (`-d @- <<<"$body"`) in `agent-commands`, `agent-session`, `agent-skill`, `aimaestro-call`, `aimaestro-react`, `aimaestro-task` and `graph-index-delta`, because Git for Windows' curl converts its arguments to the ANSI code page and mangled accents and emoji. `list-agents`, `export-agent` and `import-agent` use jq instead of python3; `docs-helper` URL-encodes the query with jq `@uri`.
+
 ## [1.19.10] - 2026-11-06
 
 - `aimaestro-react.sh`: an agent reacts to a message in its chat, such as ✅ to say "read it, on it". Needs AI Maestro 0.106.90 or newer.
