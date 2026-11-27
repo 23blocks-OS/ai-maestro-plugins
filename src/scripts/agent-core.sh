@@ -395,7 +395,7 @@ restart_agent() {
     local response
     response=$(curl -s --max-time 30 -X POST "${api_base}/api/agents/${agent_id}/hibernate")
     local error
-    error=$(echo "$response" | jq -r '.error // empty' 2>/dev/null)
+    error=$(echo "$response" | jq -r 'if .error then (.message // .error) else empty end' 2>/dev/null)
     if [[ -n "$error" ]]; then
         print_warning "Hibernate warning: $error"
     fi
@@ -405,7 +405,7 @@ restart_agent() {
 
     # Wake
     response=$(curl -s --max-time 30 -X POST "${api_base}/api/agents/${agent_id}/wake")
-    error=$(echo "$response" | jq -r '.error // empty' 2>/dev/null)
+    error=$(echo "$response" | jq -r 'if .error then (.message // .error) else empty end' 2>/dev/null)
     if [[ -n "$error" ]]; then
         print_error "Wake failed: $error"
         return 1

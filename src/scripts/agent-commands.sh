@@ -329,7 +329,7 @@ cmd_show() {
     # Validate JSON response before processing
     if ! echo "$response" | jq -e '.agent' >/dev/null 2>&1; then
         local error_msg
-        error_msg=$(echo "$response" | jq -r '.error // empty' 2>/dev/null)
+        error_msg=$(echo "$response" | jq -r 'if .error then (.message // .error) else empty end' 2>/dev/null)
         if [[ -n "$error_msg" ]]; then
             print_error "API error: $error_msg"
         else
@@ -694,7 +694,7 @@ HELP
 
     # Check for error
     local error
-    error=$(echo "$response" | jq -r '.error // empty')
+    error=$(echo "$response" | jq -r 'if .error then (.message // .error) else empty end')
     if [[ -n "$error" ]]; then
         print_error "$error"
         return 1
@@ -795,7 +795,7 @@ HELP
     response=$(curl -s --max-time 30 -X DELETE "${api_base}/api/agents/${agent_id}")
 
     local error
-    error=$(echo "$response" | jq -r '.error // empty')
+    error=$(echo "$response" | jq -r 'if .error then (.message // .error) else empty end')
     if [[ -n "$error" ]]; then
         print_error "$error"
         return 1
@@ -931,7 +931,7 @@ HELP
         -d "$payload")
 
     local error
-    error=$(echo "$response" | jq -r '.error // empty')
+    error=$(echo "$response" | jq -r 'if .error then (.message // .error) else empty end')
     if [[ -n "$error" ]]; then
         print_error "$error"
         return 1
@@ -1023,7 +1023,7 @@ HELP
         -d "$payload")
 
     local error
-    error=$(echo "$response" | jq -r '.error // empty')
+    error=$(echo "$response" | jq -r 'if .error then (.message // .error) else empty end')
     if [[ -n "$error" ]]; then
         print_error "$error"
         return 1
@@ -1220,7 +1220,7 @@ HELP
         -d "$agent_data")
 
     local error
-    error=$(echo "$response" | jq -r '.error // empty')
+    error=$(echo "$response" | jq -r 'if .error then (.message // .error) else empty end')
     if [[ -n "$error" ]]; then
         print_error "$error"
         return 1
