@@ -73,7 +73,7 @@ cmd_session_add() {
         -d "$payload")
 
     local error
-    error=$(echo "$response" | jq -r '.error // empty')
+    error=$(echo "$response" | jq -r 'if .error then (.message // .error) else empty end')
     if [[ -n "$error" ]]; then
         print_error "$error"
         return 1
@@ -117,7 +117,7 @@ cmd_session_remove() {
     response=$(curl -s --max-time 30 -X DELETE "$url")
 
     local error
-    error=$(echo "$response" | jq -r '.error // empty')
+    error=$(echo "$response" | jq -r 'if .error then (.message // .error) else empty end')
     if [[ -n "$error" ]]; then
         print_error "$error"
         return 1
@@ -170,7 +170,7 @@ cmd_session_exec() {
         -d "$payload")
 
     local error
-    error=$(echo "$response" | jq -r '.error // empty')
+    error=$(echo "$response" | jq -r 'if .error then (.message // .error) else empty end')
     if [[ -n "$error" ]]; then
         print_error "$error"
         return 1
@@ -208,7 +208,7 @@ cmd_hibernate() {
     response=$(curl -s --max-time 30 -X POST "${api_base}/api/agents/${RESOLVED_AGENT_ID}/hibernate")
 
     local error
-    error=$(echo "$response" | jq -r '.error // empty')
+    error=$(echo "$response" | jq -r 'if .error then (.message // .error) else empty end')
     if [[ -n "$error" ]]; then
         print_error "$error"
         return 1
@@ -267,7 +267,7 @@ cmd_wake() {
         -d "$wake_payload")
 
     local error
-    error=$(echo "$response" | jq -r '.error // empty')
+    error=$(echo "$response" | jq -r 'if .error then (.message // .error) else empty end')
     if [[ -n "$error" ]]; then
         print_error "$error"
         return 1
