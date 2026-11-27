@@ -5,7 +5,7 @@ allowed-tools: Bash
 compatibility: Requires AI Maestro (aimaestro.dev) with Bash shell access
 metadata:
   author: 23blocks
-  version: 2.2.0
+  version: 2.3.0
 ---
 
 # AI Maestro Agent Management
@@ -19,8 +19,8 @@ aimaestro-agent.sh list [--status online|offline|hibernated|all] [--format table
 aimaestro-agent.sh show <agent> [--format pretty|json]
 
 aimaestro-agent.sh create <name> --dir <absolute-path> [-p <program>] [-m <model>] [-t "<task>"] \
-    [--tags a,b] [-T <trust-level>] [--credential <kind> ...] [--no-session] [--no-folder] [--force-folder] [-- <program-args>...]
-aimaestro-agent.sh update <agent> [-t "<task>"] [-m <model>] [--tags a,b] [--add-tag x] [--remove-tag x] [--args "<program-args>"] [--credential <kind> ...]
+    [--tags a,b] [-T <trust-level>] [--type <type> [--cerebellum <when>]] [--credential <kind> ...] [--no-session] [--no-folder] [--force-folder] [-- <program-args>...]
+aimaestro-agent.sh update <agent> [-t "<task>"] [-m <model>] [--tags a,b] [--add-tag x] [--remove-tag x] [--args "<program-args>"] [--type <type>] [--cerebellum <when>] [--credential <kind> ...]
 aimaestro-agent.sh rename <old> <new> [--rename-session] [--rename-folder] [-y]
 aimaestro-agent.sh delete <agent> --confirm
 
@@ -34,6 +34,7 @@ aimaestro-agent.sh session exec <agent> <command...>
 ```
 
 - `create` makes the folder, runs `git init`, writes a CLAUDE.md template, registers the agent and starts its tmux session. `--dir` is required, and `create` fails if the folder already exists unless you pass `--force-folder` (use it for an existing project). Program defaults to Claude Code.
+- Types: `simple` (default, one session), `lola` (one session on the lolabot framework) or `jarvis` (the session plus a cerebellum, a fast voice at the agent's devices; `--cerebellum when-used` (default) or `always`). Jarvis needs the private Jarvis module on the host; without it the agent answers through its session.
 - Trust levels: `supervised` (default), `planOnly`, `trustEdits`, `smartAuto`, `fullAutonomy`. On `wake`, `-T` applies to that session only.
 - `delete` kills the agent's sessions, marks it deleted in the registry and removes its AMP messaging directory; the project folder stays. `--keep-folder` and `--keep-data` are accepted but not yet honoured by the server. Confirm with the user before deleting.
 - `restart` cannot restart the session you are running in.

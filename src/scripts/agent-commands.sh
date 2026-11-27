@@ -436,7 +436,7 @@ is_allowed_program() {
 
 cmd_create() {
     local name="" dir="" program="claude-code" model="" task="" tags="" trust_level="" permissions="full"
-    local no_session=false no_folder=false force_folder=false
+    local no_session=false no_folder=false force_folder=false agent_type="" cerebellum=""
     local cred_kind="" cred_secret="" cred_base="" cred_model="" cred_dir="" cred_account="" cred_fallback=""
     local -a program_args=()  # Arguments to pass to the program (after --)
 
@@ -463,6 +463,12 @@ cmd_create() {
             --permissions)
                 [[ $# -lt 2 ]] && { print_error "--permissions requires a value"; return 1; }
                 permissions="$2"; shift 2 ;;
+            --type)
+                [[ $# -lt 2 ]] && { print_error "--type requires a value"; return 1; }
+                agent_type="$2"; shift 2 ;;
+            --cerebellum)
+                [[ $# -lt 2 ]] && { print_error "--cerebellum requires a value"; return 1; }
+                cerebellum="$2"; shift 2 ;;
             --no-session) no_session=true; shift ;;
             --no-folder) no_folder=true; shift ;;
             --force-folder) force_folder=true; shift ;;
@@ -496,6 +502,8 @@ Options:
                          (default: full). full = Bash, file tools, web and subagents
                          pre-approved. messaging = read-only plus the amp-*.sh scripts;
                          no shell, no file writes, no web, no subagents.
+  --type <type>          Agent type: simple (default), lola or jarvis
+  --cerebellum <when>    Jarvis only: when-used (default) or always
   --no-session           Don't create tmux session
   --no-folder            Don't create project folder
   --force-folder         Use existing directory (by default, errors if exists)
@@ -647,6 +655,9 @@ HELP
     [[ -n "$model" ]] && payload=$(echo "$payload" | jq --arg m "$model" '. + {model: $m}')
     [[ -n "$task" ]] && payload=$(echo "$payload" | jq --arg t "$task" '. + {taskDescription: $t}')
     [[ -n "$tags" ]] && payload=$(echo "$payload" | jq --arg t "$tags" '. + {tags: ($t | split(","))}')
+    # The agent's type; the server checks the names (lib/agent-brain.mjs in AI Maestro)
+    [[ -n "$agent_type$cerebellum" ]] && payload=$(echo "$payload" | jq --arg ty "$agent_type" --arg cb "$cerebellum" \
+        '. + (if $ty == "" then {} else {type: $ty} end) + (if $cb == "" then {} else {brain: {cerebellum: $cb}} end)')
     # Trust level
     if [[ -n "$trust_level" ]]; then
         local allowed_levels="supervised planOnly trustEdits smartAuto fullAutonomy"
@@ -798,7 +809,7 @@ HELP
 # ============================================================================
 
 cmd_update() {
-    local agent="" task="" tags="" add_tag="" remove_tag="" model="" args=""
+    local agent="" task="" tags="" add_tag="" remove_tag="" model="" args="" agent_type="" cerebellum=""
     local cred_kind="" cred_secret="" cred_base="" cred_model="" cred_dir="" cred_account="" cred_fallback=""
     local nl=$'\n'
 
@@ -822,6 +833,12 @@ cmd_update() {
             --args)
                 [[ $# -lt 2 ]] && { print_error "--args requires a value"; return 1; }
                 args="$2"; shift 2 ;;
+            --type)
+                [[ $# -lt 2 ]] && { print_error "--type requires a value"; return 1; }
+                agent_type="$2"; shift 2 ;;
+            --cerebellum)
+                [[ $# -lt 2 ]] && { print_error "--cerebellum requires a value"; return 1; }
+                cerebellum="$2"; shift 2 ;;
             --credential|--secret|--base-url|--cred-model|--dir|--account|--fallback)
                 [[ $# -lt 2 ]] && { print_error "$1 requires a value"; return 1; }
                 case "$1" in
@@ -840,6 +857,8 @@ Options:
   --tags <t1,t2>         Replace all tags
   --add-tag <tag>        Add a tag (repeat the flag to add several)
   --remove-tag <tag>     Remove a tag (repeat the flag to remove several)
+  --type <type>          Change the agent type: simple, lola or jarvis
+  --cerebellum <when>    Jarvis only: when-used or always
 
 Model access (which account the agent uses; applied at its next wake):
   --credential <kind>    host-login | oauth-token | api-key | gateway | config-dir
@@ -878,6 +897,9 @@ HELP
     [[ -n "$model" ]] && payload=$(echo "$payload" | jq --arg m "$model" '. + {model: $m}')
     [[ -n "$tags" ]] && payload=$(echo "$payload" | jq --arg t "$tags" '. + {tags: ($t | split(","))}')
     [[ -n "$args" ]] && payload=$(echo "$payload" | jq --arg a "$args" '. + {programArgs: $a}')
+    # The agent's type; the server checks the names (lib/agent-brain.mjs in AI Maestro)
+    [[ -n "$agent_type$cerebellum" ]] && payload=$(echo "$payload" | jq --arg ty "$agent_type" --arg cb "$cerebellum" \
+        '. + (if $ty == "" then {} else {type: $ty} end) + (if $cb == "" then {} else {brain: {cerebellum: $cb}} end)')
     # The server checks the profile (and refuses a value where a vault name belongs)
     [[ -n "$cred_kind" ]] && payload=$(echo "$payload" | jq --arg k "$cred_kind" --arg s "$cred_secret" --arg b "$cred_base" \
         --arg m "$cred_model" --arg d "$cred_dir" --arg a "$cred_account" --arg f "${cred_fallback:-}" \
