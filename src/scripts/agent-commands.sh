@@ -709,7 +709,19 @@ HELP
         echo "   ID: $agent_id"
         echo "   Directory: $dir"
         [[ "$force_folder" == true ]] && echo "   Note: Used existing directory (--force-folder)"
-        [[ "$no_session" == false ]] && echo "   Session: $name (tmux)"
+        if [[ "$no_session" == false ]]; then
+            # The create call only records the session; waking starts it (program, model access, trust level)
+            local wake_response wake_error
+            wake_response=$(curl -s --max-time 30 -X POST "${api_base}/api/agents/${agent_id}/wake" \
+                -H "Content-Type: application/json" -d '{}')
+            wake_error=$(echo "$wake_response" | jq -r 'if .error then (.message // .error) else empty end' 2>/dev/null)
+            if [[ -n "$wake_error" || -z "$wake_response" ]]; then
+                print_warning "   Session not started: ${wake_error:-no answer from AI Maestro}. Run: aimaestro-agent.sh wake $name"
+            else
+                echo "   Session: $name (tmux)"
+                echo "$wake_response" | jq -r '.credentialWarnings[]? | "   Warning: " + .' >&2
+            fi
+        fi
         [[ ${#program_args[@]} -gt 0 ]] && echo "   Program args: ${program_args[*]}"
         if [[ -n "$cred_kind" ]]; then
             # An existing folder (--force-folder) can carry settings that defeat the choice: say so now
