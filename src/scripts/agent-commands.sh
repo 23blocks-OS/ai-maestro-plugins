@@ -743,33 +743,27 @@ HELP
 
 cmd_delete() {
     local agent=""
-    local keep_folder=false keep_data=false confirm_delete=false
+    local confirm_delete=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --confirm) confirm_delete=true; shift ;;
-            --keep-folder) keep_folder=true; shift ;;
-            --keep-data) keep_data=true; shift ;;
+            # Old flags, still accepted so scripts don't break: the folder and data are always kept
+            --keep-folder|--keep-data) shift ;;
             -h|--help)
                 cat << 'HELP'
-Usage: aimaestro-agent.sh delete <agent> --confirm [options]
+Usage: aimaestro-agent.sh delete <agent> --confirm
+
+Stops the agent's tmux sessions, marks it deleted in the agent list and
+removes its messaging (AMP) folder. Its project folder and its data
+(~/.aimaestro/agents/<id>/) stay on disk; remove them yourself if you no
+longer need them.
 
 Options:
   --confirm         Required for deletion (safety flag)
-  --keep-folder     Don't delete project folder
-  --keep-data       Don't delete agent data directory
 
 Examples:
-  # Delete agent (requires --confirm for safety)
   aimaestro-agent.sh delete my-agent --confirm
-
-  # Delete agent but keep the project folder
-  aimaestro-agent.sh delete my-agent --confirm --keep-folder
-
-  # Delete agent but keep agent data (logs, history)
-  aimaestro-agent.sh delete my-agent --confirm --keep-data
-
-  # Delete by agent ID
   aimaestro-agent.sh delete abc123-uuid --confirm
 HELP
                 return 0 ;;
@@ -790,8 +784,8 @@ HELP
     if [[ "$confirm_delete" == false ]]; then
         print_error "Deleting agent '$agent_name' requires --confirm flag"
         print_error "This will:"
-        print_error "   - Kill all tmux sessions"
-        [[ "$keep_data" == false ]] && print_error "   - Delete agent data (~/.aimaestro/agents/$agent_id/)"
+        print_error "   - Stop its tmux sessions and remove its messaging (AMP) folder"
+        print_error "   - Keep its project folder and data (~/.aimaestro/agents/$agent_id/)"
         print_error ""
         print_error "Run with --confirm to proceed"
         return 1

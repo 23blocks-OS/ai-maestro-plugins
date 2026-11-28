@@ -90,9 +90,9 @@ Agent: backend-api
 
 1. Validates the agent exists and that `--confirm` was passed
 2. Calls `DELETE /api/agents/<id>` (a soft delete): kills the agent's tmux sessions, marks it deleted in the registry and removes its AMP messaging directory
-3. Leaves the project folder on disk
+3. Leaves the project folder and the agent's data (`~/.aimaestro/agents/<id>/`) on disk
 
-**Note:** `--keep-folder` and `--keep-data` are parsed but not sent to the server; they currently change nothing.
+`--keep-folder` and `--keep-data` are still accepted, so old scripts keep working, but they change nothing.
 
 ---
 
